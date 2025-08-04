@@ -1,0 +1,56 @@
+body {
+    font-family: 'Roboto', sans-serif;
+    background-color: #0A0A0A;
+    color: #E5E5E5;
+}
+h1, h2, h3, .font-teko {
+    font-family: 'Teko', sans-serif;
+}
+.brand-red { color: #D32F2F; }
+.bg-brand-red { background-color: #D32F2F; }
+.hover-bg-brand-red:hover { background-color: #B71C1C; }
+.border-brand-red { border-color: #D32F2F; }
+
+.hero-bg {
+    background: linear-gradient(to top, rgba(10, 10, 10, 1) 10%, rgba(10, 10, 10, 0.6) 70%), url('https://placehold.co/1920x1080/111827/FFFFFF?text=Entrepôt+Frigorifique+SOMACIF') no-repeat center center;
+    background-size: cover;
+}
+.sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    transition: all 0.3s ease-in-out;
+}
+.header-scrolled {
+    background-color: rgba(10, 10, 10, 0.85);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid #262626;
+}
+.product-card-info {
+    background-color: #171717;
+    border: 1px solid #262626;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.product-card-info:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 20px 25px -5px rgba(211, 47, 47, 0.1), 0 10px 10px -5px rgba(211, 47, 47, 0.04);
+    border-color: #404040;
+}
+.client-card {
+    background-size: cover;
+    background-position: center;
+    transition: transform 0.4s ease;
+}
+.client-card:hover {
+    transform: scale(1.05);
+}
+.fade-in-section {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+
+.fade-in-section.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
