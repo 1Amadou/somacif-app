@@ -5,25 +5,42 @@
     <main>
         <section class="py-16 md:py-24">
             <div class="container mx-auto px-6">
-                <div class="grid lg:grid-cols-2 gap-12 lg:gap-16">
+                {{-- La grille passe en une seule colonne sur mobile --}}
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16">
+                    
                     <div>
-                        <div class="main-image mb-4 rounded-lg overflow-hidden bg-neutral-800">
-                            <img id="mainProductImage" src="{{ $product->image_principale ? Storage::url($product->image_principale) : 'https://placehold.co/600x500/171717/FFFFFF?text=Image+Produit' }}" alt="Image principale de {{ $product->nom }}" class="w-full h-full object-cover">
+                        {{-- La galerie Swiper est déjà responsive par nature, aucun changement n'est nécessaire ici --}}
+                        <div style="--swiper-navigation-color: #fff; --swiper-pagination-color: #fff" class="swiper product-gallery-main mb-4 rounded-lg">
+                            <div class="swiper-wrapper">
+                                @if($product->image_principale)
+                                    <div class="swiper-slide bg-neutral-800"><img src="{{ Storage::url($product->image_principale) }}" class="w-full h-96 md:h-[500px] object-cover" /></div>
+                                @endif
+                                @if($product->images_galerie)
+                                    @foreach($product->images_galerie as $image)
+                                        <div class="swiper-slide bg-neutral-800"><img src="{{ Storage::url($image) }}" class="w-full h-96 md:h-[500px] object-cover" /></div>
+                                    @endforeach
+                                @endif
+                            </div>
+                            <div class="swiper-button-next"></div>
+                            <div class="swiper-button-prev"></div>
                         </div>
-                        <div class="thumbnails grid grid-cols-5 gap-4">
-                            @if($product->image_principale)
-                                <img src="{{ Storage::url($product->image_principale) }}" alt="Thumbnail 1" class="product-gallery-thumbnail active rounded" onclick="changeImage(this)">
-                            @endif
-                            @if($product->images_galerie)
-                                @foreach($product->images_galerie as $image)
-                                    <img src="{{ Storage::url($image) }}" alt="Thumbnail supplémentaire" class="product-gallery-thumbnail rounded" onclick="changeImage(this)">
-                                @endforeach
-                            @endif
+                        <div thumbsSlider="" class="swiper product-gallery-thumbs">
+                            <div class="swiper-wrapper">
+                                @if($product->image_principale)
+                                    <div class="swiper-slide !w-1/4 md:!w-1/5"><img src="{{ Storage::url($product->image_principale) }}" class="w-full h-24 object-cover rounded cursor-pointer" /></div>
+                                @endif
+                                @if($product->images_galerie)
+                                    @foreach($product->images_galerie as $image)
+                                        <div class="swiper-slide !w-1/4 md:!w-1/5"><img src="{{ Storage::url($image) }}" class="w-full h-24 object-cover rounded cursor-pointer" /></div>
+                                    @endforeach
+                                @endif
+                            </div>
                         </div>
                     </div>
 
                     <div>
-                        <h1 class="text-5xl md:text-7xl font-bold uppercase text-white leading-none">{{ $product->nom }}</h1>
+                        {{-- Typographie responsive : text-4xl sur mobile, md:text-7xl sur desktop --}}
+                        <h1 class="text-4xl md:text-7xl font-bold uppercase text-white leading-none">{{ $product->nom }}</h1>
                         <p class="text-lg text-slate-400 mt-4 mb-6">{{ $product->description_courte }}</p>
                         
                         <div class="border-y border-slate-800 py-6 space-y-4">
@@ -41,13 +58,14 @@
                         <div class="mt-10">
                             @if($authenticatedClient)
                                 <div class="bg-dark-card border border-border-dark p-6 rounded-lg">
-                                    <h3 class="text-2xl font-teko text-white mb-4">Ajouter au panier</h3>
                                     <livewire:product.add-to-cart :product="$product" />
                                 </div>
                             @else
-                                <a href="{{ route('nos-offres') }}" class="w-full text-center bg-brand-red hover-bg-brand-red text-white font-bold tracking-widest uppercase transition duration-300 py-4 px-10 rounded-sm inline-block">
-                                    <i class="fas fa-paper-plane mr-3"></i> Passer une commande
-                                </a>
+                                <div class="bg-dark-card border border-brand-red p-6 rounded-lg text-center fade-in-section">
+                                    <h3 class="text-2xl font-teko text-white">Voir les prix et commander ?</h3>
+                                    <p class="text-slate-400 mt-2 mb-6">L'accès aux tarifs et au passage de commande est réservé à nos partenaires.</p>
+                                    <a href="{{ route('login') }}" class="btn btn-primary w-full">Se connecter ou Devenir Partenaire</a>
+                                </div>
                             @endif
                         </div>
                     </div>
@@ -94,20 +112,4 @@
         @endif
     </main>
 
-    @push('scripts')
-    <script>
-        function changeImage(element) {
-            document.getElementById('mainProductImage').src = element.src;
-            document.querySelectorAll('.product-gallery-thumbnail').forEach(thumb => thumb.classList.remove('active'));
-            element.classList.add('active');
-        }
-
-        function switchTab(event, tabName) {
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
-            document.getElementById(tabName).classList.remove('hidden');
-            document.querySelectorAll('.info-tab').forEach(tab => tab.classList.remove('active'));
-            event.target.classList.add('active');
-        }
-    </script>
-    @endpush
 </x-layouts.app>

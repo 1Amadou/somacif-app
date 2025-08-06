@@ -9,11 +9,11 @@
         </div>
     </section>
 
-    <section id="portail-commande" class="py-24">
+    {{-- <section id="portail-commande" class="py-24">
         <div class="container mx-auto px-6 max-w-4xl">
             <livewire:order-form />
         </div>
-    </section>
+    </section> --}}
 
     <section class="py-24 bg-black">
         <div class="container mx-auto px-6 space-y-24">

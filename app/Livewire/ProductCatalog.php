@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Livewire;
 
 use App\Models\Client;
@@ -13,6 +12,7 @@ class ProductCatalog extends Component
 
     public ?Client $client = null;
     public array $quantities = [];
+    public array $selectedVariants = [];
 
     public function mount()
     {
@@ -20,21 +20,22 @@ class ProductCatalog extends Component
             $this->client = Client::find(session('authenticated_client_id'));
         }
 
-        $products = Product::where('is_visible', true)->pluck('id');
-        foreach ($products as $productId) {
-            $this->quantities[$productId] = 1;
+        $products = Product::where('is_visible', true)->with('uniteDeVentes')->get();
+        foreach ($products as $product) {
+            // Par défaut, on sélectionne la première variante et la quantité est 1
+            $this->selectedVariants[$product->id] = $product->uniteDeVentes->first()->id ?? null;
+            $this->quantities[$product->id] = 1;
         }
     }
 
     public function addToCart($productId)
     {
-        if (!$this->client) return; // Sécurité
+        if (!$this->client || !isset($this->selectedVariants[$productId])) return;
 
+        $variantId = $this->selectedVariants[$productId];
         $quantity = $this->quantities[$productId] ?? 1;
-        
-        // On envoie un événement au panier flottant
-        $this->dispatch('productAdded', productId: $productId, quantity: $quantity);
-        
+
+        $this->dispatch('productAdded', variantId: $variantId, quantity: $quantity);
         $this->quantities[$productId] = 1;
     }
 
@@ -53,11 +54,8 @@ class ProductCatalog extends Component
     {
         $products = Product::where('is_visible', true)
             ->with('uniteDeVentes', 'pointsDeVenteStock')
-            ->latest()
-            ->paginate(12);
-            
-        return view('livewire.product-catalog', [
-            'products' => $products,
-        ]);
+            ->latest()->paginate(12);
+
+        return view('livewire.product-catalog', ['products' => $products]);
     }
 }

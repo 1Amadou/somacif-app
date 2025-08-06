@@ -9,12 +9,13 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             UserSeeder::class,
-            CategorySeeder::class, // Troncature des catégories et posts
-            PointDeVenteSeeder::class, // Troncature des points de vente et inventaire
+            CategorySeeder::class,
+            PointDeVenteSeeder::class,
             ClientSeeder::class,
-            ProductSeeder::class, // Troncature des produits et unités
-            PostSeeder::class, // Remplissage des posts
+            ProductSeeder::class,
+            PostSeeder::class,
             PageSeeder::class,
+            NotificationTemplateSeeder::class, 
         ]);
     }
 }

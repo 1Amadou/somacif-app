@@ -12,19 +12,16 @@ class Client extends Model
     use HasFactory;
 
     protected $fillable = [
-        'nom',
-        'type',
-        'telephone',
-        'status',
-        'email',
-        'identifiant_unique_somacif',
-        'entrepots_de_livraison',
+        'nom', 'type', 'status', 'telephone', 'email', 
+        'identifiant_unique_somacif', 'entrepots_de_livraison',
+        'contract_path', 'terms_accepted_at',
     ];
 
     protected function casts(): array
     {
         return [
             'entrepots_de_livraison' => 'array',
+            'terms_accepted_at' => 'datetime',
         ];
     }
 

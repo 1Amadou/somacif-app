@@ -4,10 +4,11 @@ namespace App\Livewire;
 
 use App\Models\Client;
 use App\Models\Order;
-use App\Models\Product;
-use Livewire\Component;
+use App\Models\UniteDeVente;
+use App\Models\NotificationTemplate;
 use Illuminate\Support\Facades\Notification as Notifier;
 use App\Notifications\NewOrderAdminNotification;
+use Livewire\Component;
 
 class CheckoutPage extends Component
 {
@@ -23,18 +24,14 @@ class CheckoutPage extends Component
     {
         $this->client = Client::find(session('authenticated_client_id'));
         $this->cartItems = session('cart', []);
-
         if (empty($this->cartItems)) {
             return $this->redirect(route('products.index'), navigate: true);
         }
-
         $addresses = $this->client->entrepots_de_livraison;
         $this->deliveryAddresses = is_array($addresses) ? $addresses : [];
-
         if (!empty($this->deliveryAddresses)) {
             $this->selectedAddress = $this->deliveryAddresses[0];
         }
-
         $this->calculateTotal();
     }
 
@@ -52,10 +49,10 @@ class CheckoutPage extends Component
     public function calculateTotal()
     {
         $this->totalAmount = 0;
-        foreach ($this->cartItems as $productId => $item) {
-            $product = Product::with('uniteDeVentes')->find($productId);
-            if ($product && $product->uniteDeVentes->first()) {
-                $unitPrice = $this->getPriceForClient($product->uniteDeVentes->first());
+        foreach ($this->cartItems as $variantId => $item) {
+            $variant = UniteDeVente::find($variantId);
+            if ($variant) {
+                $unitPrice = $this->getPriceForClient($variant);
                 $this->totalAmount += $item['quantity'] * $unitPrice;
             }
         }
@@ -67,19 +64,12 @@ class CheckoutPage extends Component
             $this->addError('selectedAddress', 'Aucun point de livraison n\'est configuré.');
             return;
         }
-
-        $this->validate([
-            'selectedAddress' => 'required',
-            'notes' => 'nullable|string',
-        ]);
-
+        $this->validate(['selectedAddress' => 'required', 'notes' => 'nullable|string']);
         $totalCartons = array_sum(array_column($this->cartItems, 'quantity'));
         if ($this->client->type === 'Grossiste' && $totalCartons < 100) {
             $this->addError('cart', 'Les grossistes doivent commander un minimum de 100 cartons.');
             return;
         }
-
-        // On recalcule le total juste avant de commander pour être sûr
         $this->calculateTotal();
 
         $order = Order::create([
@@ -88,24 +78,29 @@ class CheckoutPage extends Component
             'statut' => 'Reçue',
             'delivery_address' => $this->selectedAddress,
             'notes' => $this->notes,
-            'montant_total' => $this->totalAmount, // On utilise le montant calculé
+            'montant_total' => $this->totalAmount,
         ]);
 
-        foreach ($this->cartItems as $productId => $item) {
-            $product = Product::with('uniteDeVentes')->find($productId);
-            $unitPrice = $this->getPriceForClient($product->uniteDeVentes->first());
-            $order->orderItems()->create([
-                'product_id' => $productId,
-                'nom_produit' => $item['name'],
-                'unite' => 'Carton',
-                'quantite' => $item['quantity'],
-                'prix_unitaire' => $unitPrice,
-            ]);
+        foreach ($this->cartItems as $variantId => $item) {
+            $variant = UniteDeVente::find($variantId);
+            if ($variant) {
+                $unitPrice = $this->getPriceForClient($variant);
+                $order->orderItems()->create([
+                    'product_id' => $variant->product_id,
+                    'unite_de_vente_id' => $variant->id,
+                    'nom_produit' => $item['name'],
+                    'unite' => $variant->nom_unite,
+                    'calibre' => $item['calibre'],
+                    'quantite' => $item['quantity'],
+                    'prix_unitaire' => $unitPrice,
+                ]);
+            }
         }
 
-        // On notifie l'admin
+        // On notifie l'admin en utilisant le système dynamique
         $adminEmail = config('settings.admin_notification_email');
-        if ($adminEmail) {
+        $template = NotificationTemplate::where('key', 'admin.new_order')->first();
+        if ($adminEmail && $template && $template->is_active && config('settings.mail_notifications_active')) {
             Notifier::route('mail', $adminEmail)->notify(new NewOrderAdminNotification($order));
         }
 

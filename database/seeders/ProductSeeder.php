@@ -12,33 +12,42 @@ class ProductSeeder extends Seeder
     {
         Schema::disableForeignKeyConstraints();
         Product::truncate();
-        UniteDeVente::truncate(); // On vide aussi les unités de vente
+        UniteDeVente::truncate();
         Schema::enableForeignKeyConstraints();
 
-        $productsData = [
-            ['nom' => 'Tilapia (Carpe)', 'slug' => 'tilapia-carpe', 'desc' => 'Le favori des familles maliennes, disponible dans tous les calibres.', 'calibres' => ['200-300g', '300-500g']],
-            ['nom' => 'Pangasius (Filets)', 'slug' => 'pangasius-filets', 'desc' => 'Filets sans arêtes, parfaits pour les restaurants et une cuisine rapide.', 'calibres' => ['170-220g']],
-            ['nom' => 'Chinchard', 'slug' => 'chinchard', 'desc' => 'Un goût prononcé et une excellente source de protéines, très populaire.', 'calibres' => ['Taille Moyenne', 'Grande Taille']],
-            ['nom' => 'Dorade Royale', 'slug' => 'dorade-royale', 'desc' => 'Chair fine et savoureuse, le choix de prédilection des grands hôtels.', 'calibres' => ['400-600g']],
-            ['nom' => 'Thiof (Mérou)', 'slug' => 'thiof-merou', 'desc' => 'Un poisson noble à la texture ferme, parfait pour les plats en sauce.', 'calibres' => ['Pièce 1-2kg', 'Pièce 2-3kg']],
-            ['nom' => 'Capitaine', 'slug' => 'capitaine', 'desc' => 'Très apprécié pour sa chair blanche et tendre, excellent en friture ou grillé.', 'calibres' => ['Taille Moyenne']],
-        ];
+        $product1 = Product::create([
+            'nom' => 'Tilapia (Carpe)',
+            'slug' => 'tilapia-carpe',
+            'description_courte' => 'Le favori des familles maliennes, disponible dans tous les calibres.',
+            'is_visible' => true,
+        ]);
+        $product1->uniteDeVentes()->create([
+            'nom_unite' => 'Carton',
+            'calibre' => '200-300g',
+            'prix_grossiste' => 15000,
+            'prix_hotel_restaurant' => 16000,
+            'prix_particulier' => 18000,
+        ]);
+        $product1->uniteDeVentes()->create([
+            'nom_unite' => 'Carton',
+            'calibre' => '300-500g',
+            'prix_grossiste' => 18000,
+            'prix_hotel_restaurant' => 19500,
+            'prix_particulier' => 22000,
+        ]);
 
-        foreach ($productsData as $data) {
-            $product = Product::create([
-                'nom' => $data['nom'],
-                'slug' => $data['slug'],
-                'description_courte' => $data['desc'],
-                'calibres' => $data['calibres'],
-                'is_visible' => true,
-            ]);
-
-            $product->uniteDeVentes()->create([
-                'nom_unite' => 'Carton',
-                'prix_grossiste' => rand(100, 200) * 100,
-                'prix_hotel_restaurant' => rand(120, 220) * 100,
-                'prix_particulier' => rand(150, 250) * 100,
-            ]);
-        }
+        $product2 = Product::create([
+            'nom' => 'Pangasius (Filets)',
+            'slug' => 'pangasius-filets',
+            'description_courte' => 'Filets sans arêtes, parfaits pour les restaurants et une cuisine rapide.',
+            'is_visible' => true,
+        ]);
+        $product2->uniteDeVentes()->create([
+            'nom_unite' => 'Carton',
+            'calibre' => '170-220g',
+            'prix_grossiste' => 25000,
+            'prix_hotel_restaurant' => 27000,
+            'prix_particulier' => 30000,
+        ]);
     }
 }

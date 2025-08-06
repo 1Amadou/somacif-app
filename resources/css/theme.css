@@ -1,0 +1,90 @@
+/* === FONDAMENTAUX & TYPOGRAPHIE === */
+body {
+    font-family: 'Roboto', sans-serif;
+    background-color: #0A0A0A;
+    color: #E5E5E5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Teko', sans-serif;
+    text-transform: uppercase;
+    color: #FFFFFF;
+}
+.container {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+}
+@media (min-width: 640px) { .container { max-width: 640px; } }
+@media (min-width: 768px) { .container { max-width: 768px; } }
+@media (min-width: 1024px) { .container { max-width: 1024px; } }
+@media (min-width: 1280px) { .container { max-width: 1280px; } }
+
+/* === COULEURS & ACCENTS === */
+.brand-red { color: #D32F2F; }
+.bg-brand-red { background-color: #D32F2F; }
+.hover-bg-brand-red:hover { background-color: #B71C1C; }
+
+/* === COMPOSANTS PERSONNALISÉS === */
+/* Boutons */
+.btn {
+    padding: 0.75rem 2rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border-radius: 2px;
+    transition: all 0.3s ease;
+    display: inline-block;
+    text-align: center;
+}
+.btn-primary {
+    background-color: #D32F2F;
+    color: #FFFFFF;
+}
+.btn-primary:hover {
+    background-color: #B71C1C;
+    transform: scale(1.05);
+}
+.btn-secondary {
+    border: 2px solid #6B7280;
+    color: #FFFFFF;
+}
+.btn-secondary:hover {
+    border-color: #D32F2F;
+    color: #D32F2F;
+}
+
+/* Cartes Produit */
+.product-card {
+    background-color: #171717;
+    border: 1px solid #262626;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+.product-card:hover {
+    transform: translateY(-8px);
+    border-color: #404040;
+}
+.product-card img {
+    transition: transform 0.4s ease;
+}
+.product-card:hover img {
+    transform: scale(1.05);
+}
+
+/* Header */
+.sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    transition: all 0.3s ease-in-out;
+}
+.header-scrolled {
+    background-color: rgba(10, 10, 10, 0.85);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid #262626;
+}

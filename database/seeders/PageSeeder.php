@@ -95,6 +95,73 @@ class PageSeeder extends Seeder
             ],
         ]);
 
+        // NOUVELLE PAGE : GROSSISTES
+        Page::updateOrCreate(['slug' => 'grossistes'], [
+            'titres' => [
+                'header_title' => 'Devenez notre Partenaire Grossiste',
+                'presentation_title' => 'La Puissance SOMACIF au Service de Votre Marge',
+                'services_title' => 'Vos Avantages Exclusifs',
+                'how_it_works_title' => 'Comment ça marche ?',
+                'form_title' => 'Prêt à Développer Votre Activité ?',
+            ],
+            'contenus' => [
+                'header_subtitle' => 'Accédez au plus grand stock du Mali et à des tarifs imbattables.',
+                'presentation_text' => 'En tant que grossiste ou revendeur, votre succès dépend de la fiabilité de votre approvisionnement et de la compétitivité de vos prix. SOMACIF est le partenaire stratégique qui vous garantit les deux.',
+                'services' => [
+                    ['icon' => 'fas fa-warehouse', 'title' => 'Tarifs Dégressifs', 'description' => 'Bénéficiez de prix ultra-compétitifs sur les commandes en grande quantité.'],
+                    ['icon' => 'fas fa-truck', 'title' => 'Logistique Prioritaire', 'description' => 'Vos commandes sont préparées et expédiées en priorité pour ne jamais être en rupture de stock.'],
+                    ['icon' => 'fas fa-box-open', 'title' => 'Accès à Tout le Catalogue', 'description' => 'Offrez à vos clients la gamme la plus large de produits de la mer au Mali.'],
+                ],
+                'how_it_works_steps' => [
+                    ['title' => '1. Postulez', 'description' => 'Remplissez le formulaire ci-dessous. Notre équipe B2B vous contacte sous 24h.'],
+                    ['title' => '2. Validez', 'description' => 'Après signature du contrat, nous activons votre compte et votre identifiant unique.'],
+                    ['title' => '3. Commandez', 'description' => 'Connectez-vous à votre portail pour commander en quelques clics aux tarifs qui vous sont réservés.'],
+                ],
+                'form_subtitle' => 'Remplissez ce formulaire pour être contacté par notre équipe commerciale.',
+            ],
+            'images' => ['header_background' => null, 'presentation_image' => null]
+        ]);
+
+        // NOUVELLE PAGE : HÔTELS & RESTAURANTS
+        Page::updateOrCreate(['slug' => 'hotels-restaurants'], [
+            'titres' => [
+                'header_title' => 'Solutions pour Hôtels & Restaurants',
+                'presentation_title' => 'La Qualité et la Constance que vos Clients Méritent',
+                'services_title' => 'Un Service Pensé pour les Chefs',
+                'how_it_works_title' => 'Comment ça marche ?',
+                'form_title' => 'Prêt à Sublimer votre Carte ?',
+            ],
+            'contenus' => [
+                'header_subtitle' => 'Un approvisionnement fiable pour une cuisine d\'exception.',
+                'presentation_text' => 'La réputation de votre établissement repose sur la qualité de vos plats. SOMACIF vous assure une constance et une fraîcheur irréprochables pour que vous puissiez vous concentrer sur votre art.',
+                 'services' => [
+                    ['icon' => 'fas fa-star', 'title' => 'Qualité Gastronomique', 'description' => 'Des produits sélectionnés pour leur calibre et leur saveur, parfaits pour vos plats signatures.'],
+                    ['icon' => 'fas fa-ruler-combined', 'title' => 'Découpes sur Mesure', 'description' => 'Optimisez votre temps en cuisine avec nos services de préparation personnalisés.'],
+                    ['icon' => 'fas fa-calendar-alt', 'title' => 'Livraisons Planifiées', 'description' => 'Mettez en place un calendrier de livraison régulier pour un approvisionnement sans faille.'],
+                ],
+                'how_it_works_steps' => [
+                    ['title' => '1. Contactez-nous', 'description' => 'Remplissez le formulaire ci-dessous. Un conseiller dédié à la restauration vous rappelle.'],
+                    ['title' => '2. Définissons vos besoins', 'description' => 'Nous validons ensemble vos produits, calibres et fréquences de livraison.'],
+                    ['title' => '3. Commandez en toute simplicité', 'description' => 'Utilisez votre portail personnalisé pour passer ou ajuster vos commandes.'],
+                ],
+                'form_subtitle' => 'Remplissez ce formulaire pour être contacté par notre équipe dédiée CHR.',
+            ],
+            'images' => ['header_background' => null, 'presentation_image' => null]
+        ]);
+        
+        // NOUVELLE PAGE : PARTICULIERS
+        Page::updateOrCreate(['slug' => 'particuliers'], [
+            'titres' => [
+                'header_title' => 'La Qualité SOMACIF pour Tous',
+                'presentation_title' => 'Le Meilleur de la Mer, Près de Chez Vous',
+            ],
+            'contenus' => [
+                'header_subtitle' => 'Retrouvez nos produits dans notre réseau de points de vente à Bamako.',
+                'presentation_text' => 'SOMACIF, ce n\'est pas que pour les professionnels ! Nous mettons un point d\'honneur à rendre nos produits de qualité accessibles à toutes les familles maliennes. Découvrez comment retrouver nos produits.',
+            ],
+            'images' => ['header_background' => null]
+        ]);
+
         // Page Société MISE À JOUR
         Page::updateOrCreate(['slug' => 'societe'], [
             'titres' => [
@@ -185,5 +252,38 @@ class PageSeeder extends Seeder
             'contenus' => ['header_subtitle' => 'Notre équipe est à votre disposition pour toute demande.'],
             'images' => ['header_background' => null]
         ]);
+
+        Page::updateOrCreate(['slug' => 'catalogue-visiteur'], [
+            'titres' => [
+            'header_title' => 'Découvrez Notre Sélection de Produits de la Mer',
+            'why_choose_title' => 'Pourquoi Choisir SOMACIF ?',
+            'how_to_order_title' => 'Comment ça Marche pour Commander ?',
+            'login_title' => 'Déjà Partenaire ? Connectez-vous',
+            'become_partner_title' => 'Devenez Partenaire et Accédez à Notre Catalogue Complet',
+            ],
+            'contenus' => [
+            'header_subtitle' => 'Une variété de produits frais et de qualité pour tous vos besoins.',
+            'slider_placeholder' => 'Ajouter des images de vos produits ici via l\'admin !',
+            'why_choose_text' => 'SOMACIF vous garantit une fraîcheur et une qualité irréprochables. Nos produits sont rigoureusement sélectionnés pour satisfaire les palais les plus exigeants.',
+            'avantages' => [
+            ['icon' => 'fas fa-fish', 'titre' => 'Fraîcheur Garantie', 'description' => 'Des produits fraîchement pêchés et livrés rapidement.'],
+            ['icon' => 'fas fa-certificate', 'titre' => 'Qualité Supérieure', 'description' => 'Une sélection rigoureuse pour une qualité optimale.'],
+            ['icon' => 'fas fa-users', 'titre' => 'Pour Tous les Besoins', 'description' => 'Que vous soyez particulier ou professionnel, trouvez votre bonheur.'],
+            ],
+            'how_to_order_text' => 'Pour consulter nos prix et passer commande, devenez partenaire en quelques étapes simples.',
+            'etapes_commande' => [
+            ['titre' => '1. Inscrivez-vous', 'description' => 'Remplissez notre formulaire de demande de partenariat.'],
+            ['titre' => '2. Validation', 'description' => 'Notre équipe vous contacte pour valider votre inscription.'],
+            ['titre' => '3. Accédez au Catalogue', 'description' => 'Connectez-vous et découvrez nos offres et passez votre commande.'],
+            ],
+            'login_subtitle' => 'Saisissez vos identifiants pour accéder à votre espace personnalisé.',
+            'become_partner_text' => 'Profitez de tarifs exclusifs et d\'un large choix de produits en rejoignant notre réseau de partenaires.',
+            ],
+            'images' => [
+                'header_background' => null,
+                'slider_gallery' => [],
+                ]
+            
+            ]);
     }
 }

@@ -14,6 +14,8 @@ class OrderItem extends Model
         'order_id',
         'product_id',
         'nom_produit',
+        'unite_de_vente_id',
+        'calibre',
         'unite',
         'quantite',
         'prix_unitaire',

@@ -8,11 +8,4 @@ export default defineConfig({
             refresh: true,
         }),
     ],
-    // Ajout de cette section pour configurer le serveur de développement Vite
-    server: {
-        host: '0.0.0.0', // Permet d'écouter sur toutes les interfaces réseau
-        hmr: {
-            host: 'localhost',
-        },
-    },
 });

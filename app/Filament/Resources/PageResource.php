@@ -47,6 +47,42 @@ class PageResource extends Resource
     private static function getSpecificFormSchema(string $slug = null): array
     {
         return match ($slug) {
+            'grossistes', 'hotels-restaurants' => [
+            Forms\Components\Tabs::make('Contenu')->tabs([
+                Forms\Components\Tabs\Tab::make('En-tête')->schema([
+                    Forms\Components\TextInput::make('titres.header_title')->label('Titre Principal'),
+                    Forms\Components\Textarea::make('contenus.header_subtitle')->label('Sous-titre'),
+                    Forms\Components\FileUpload::make('images.header_background')->label('Image de fond')->image()->disk('public')->directory('pages'),
+                ]),
+                Forms\Components\Tabs\Tab::make('Présentation')->schema([
+                    Forms\Components\TextInput::make('titres.presentation_title')->label('Titre'),
+                    Forms\Components\Textarea::make('contenus.presentation_text')->label('Texte'),
+                    Forms\Components\FileUpload::make('images.presentation_image')->label('Image d\'illustration')->image()->disk('public')->directory('pages'),
+                ]),
+                Forms\Components\Tabs\Tab::make('Services / Avantages')->schema([
+                    Forms\Components\TextInput::make('titres.services_title')->label('Titre de la section'),
+                    Forms\Components\Repeater::make('contenus.services')->schema([
+                        Forms\Components\TextInput::make('icon')->label('Icône FontAwesome (ex: fas fa-truck)')->required(),
+                        Forms\Components\TextInput::make('title')->label('Titre du service')->required(),
+                        Forms\Components\Textarea::make('description')->label('Description')->required(),
+                    ])->columns(3),
+                ]),
+                Forms\Components\Tabs\Tab::make('Comment ça marche')->schema([
+                    Forms\Components\TextInput::make('titres.how_it_works_title')->label('Titre de la section'),
+                    Forms\Components\Repeater::make('contenus.how_it_works_steps')->schema([
+                        Forms\Components\TextInput::make('title')->label('Titre de l\'étape')->required(),
+                        Forms\Components\Textarea::make('description')->label('Description')->required(),
+                    ])->columns(2),
+                ]),
+                 Forms\Components\Tabs\Tab::make('Formulaire')->schema([
+                    Forms\Components\TextInput::make('titres.form_title')->label('Titre de la section formulaire'),
+                    Forms\Components\Textarea::make('contenus.form_subtitle')->label('Sous-titre de la section formulaire'),
+                ]),
+            ]),
+        ],
+        'particuliers' => [
+            // Formulaire simple pour la page Particuliers
+        ],
 
             '_header' => [
             Forms\Components\Section::make('Header Global')->schema([
@@ -207,6 +243,61 @@ class PageResource extends Resource
                     Forms\Components\FileUpload::make('images.header_background')->label('Image de fond')->image()->disk('public')->directory('pages'),
                 ]),
             ],
+            'catalogue-visiteur' => [
+    Forms\Components\Tabs::make('Contenu')->tabs([
+        Forms\Components\Tabs\Tab::make('En-tête')->schema([
+            Forms\Components\TextInput::make('titres.header_title')->label('Titre Principal'),
+            Forms\Components\Textarea::make('contenus.header_subtitle')->label('Sous-titre'),
+            Forms\Components\FileUpload::make('images.header_background')
+                ->label('Image de fond')
+                ->image()
+                ->disk('public')
+                ->directory('pages'),
+        ]),
+        Forms\Components\Tabs\Tab::make('Pourquoi Choisir SOMACIF')->schema([
+            Forms\Components\TextInput::make('titres.why_choose_title')->label('Titre de la section'),
+            Forms\Components\Textarea::make('contenus.why_choose_text')->label('Texte de présentation'),
+            Forms\Components\Repeater::make('contenus.avantages')->schema([
+                Forms\Components\TextInput::make('icon')->label('Icône FontAwesome (ex: fas fa-fish)')->required(),
+                Forms\Components\TextInput::make('titre')->label('Titre de l\'avantage')->required(),
+                Forms\Components\Textarea::make('description')->label('Description')->required(),
+            ])->columns(3),
+        ]),
+        Forms\Components\Tabs\Tab::make('Comment Commander')->schema([
+            Forms\Components\TextInput::make('titres.how_to_order_title')->label('Titre de la section'),
+            Forms\Components\Textarea::make('contenus.how_to_order_text')->label('Texte d\'introduction'),
+            Forms\Components\Repeater::make('contenus.etapes_commande')->schema([
+                Forms\Components\TextInput::make('titre')->label('Titre de l\'étape')->required(),
+                Forms\Components\Textarea::make('description')->label('Description')->required(),
+            ])->columns(2),
+        ]),
+        Forms\Components\Tabs\Tab::make('Connexion Rapide')->schema([
+            Forms\Components\TextInput::make('titres.login_title')->label('Titre de la section'),
+            Forms\Components\Textarea::make('contenus.login_subtitle')->label('Sous-titre'),
+        ]),
+        Forms\Components\Tabs\Tab::make('Devenir Partenaire')->schema([
+            Forms\Components\TextInput::make('titres.become_partner_title')->label('Titre de la section'),
+            Forms\Components\Textarea::make('contenus.become_partner_text')->label('Texte d\'invitation'),
+        ]),
+        Forms\Components\Tabs\Tab::make('Slider')->schema([
+            Forms\Components\Textarea::make('contenus.slider_placeholder')->label('Contenu Placeholder du Slider (Texte)'),
+
+            // Nouveau champ : galerie d’images pour le slider
+            Forms\Components\FileUpload::make('images.slider_gallery')
+                ->label('Images du Slider de Produits')
+                ->multiple()
+                ->image()
+                ->disk('public')
+                ->directory('pages')
+                ->reorderable()
+                ->downloadable()
+                ->openable()
+                ->columnSpanFull(),
+        ]),
+    ]),
+],
+
+            
             default => [],
         };
     }
