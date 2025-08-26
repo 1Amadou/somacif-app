@@ -7,18 +7,17 @@ use Illuminate\Support\Facades\Auth;
 
 class LivreurLoginController extends Controller
 {
-    public function showLoginForm()
-    {
-        // Cette méthode n'est plus utilisée directement, mais on la garde par sécurité
-        return redirect()->route('login');
-    }
-
     public function login(Request $request)
     {
-        $credentials = $request->validate(['phone' => 'required', 'password' => 'required']);
+        $credentials = $request->validate([
+            'phone' => 'required',
+            'password' => 'required',
+        ]);
+
         if (Auth::guard('livreur')->attempt($credentials)) {
             $request->session()->regenerate();
-            return redirect()->intended(route('livreur.dashboard'));
+            // CORRECTION DÉFINITIVE : On redirige explicitement vers le tableau de bord livreur.
+            return redirect()->route('livreur.dashboard');
         }
         return back()->withErrors(['phone' => 'Les informations d\'identification ne correspondent pas.']);
     }
@@ -28,7 +27,7 @@ class LivreurLoginController extends Controller
         Auth::guard('livreur')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
-        // CORRECTION : On redirige vers la passerelle de connexion unifiée
+        // CORRECTION DÉFINITIVE : On redirige vers la passerelle de connexion unifiée.
         return redirect()->route('login');
     }
 }
