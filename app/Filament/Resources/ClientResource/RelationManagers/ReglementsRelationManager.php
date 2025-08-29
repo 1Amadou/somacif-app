@@ -2,13 +2,14 @@
 
 namespace App\Filament\Resources\ClientResource\RelationManagers;
 
+use App\Filament\Resources\ReglementResource;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Tables\Filters\Filter;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class ReglementsRelationManager extends RelationManager
 {
@@ -17,10 +18,7 @@ class ReglementsRelationManager extends RelationManager
 
     public function form(Form $form): Form
     {
-        return $form
-            ->schema([
-                // Le formulaire est vide car on ne crée pas de règlement depuis ici
-            ]);
+        return $form->schema([]);
     }
 
     public function table(Table $table): Table
@@ -28,11 +26,39 @@ class ReglementsRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('id')
             ->columns([
-                Tables\Columns\TextColumn::make('date_reglement')->date('d/m/Y')->label('Date'),
-                Tables\Columns\TextColumn::make('montant_verse')->money('cfa')->label('Montant Versé'),
-                Tables\Columns\TextColumn::make('montant_calcule')->money('cfa')->label('Montant Calculé'),
-                Tables\Columns\TextColumn::make('user.name')->label('Enregistré par'),
+                Tables\Columns\TextColumn::make('date_reglement')->label('Date')->date('d/m/Y')->sortable(),
+                Tables\Columns\TextColumn::make('montant_verse')->label('Montant Versé')->money('XOF')->sortable(),
+                Tables\Columns\TextColumn::make('methode_paiement')->label('Méthode')->badge(),
+                Tables\Columns\TextColumn::make('reference_paiement')->label('Référence'),
             ])
-            ->defaultSort('date_reglement', 'desc');
+            ->filters([
+                Filter::make('date_reglement')
+                    ->form([
+                        Forms\Components\DatePicker::make('created_from')->label('Du'),
+                        Forms\Components\DatePicker::make('created_until')->label('Au'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['created_from'], fn (Builder $query, $date): Builder => $query->whereDate('date_reglement', '>=', $date))
+                            ->when($data['created_until'], fn (Builder $query, $date): Builder => $query->whereDate('date_reglement', '<=', $date));
+                    })
+            ])
+            ->headerActions([
+                Tables\Actions\Action::make('create_reglement')
+                    ->label('Nouveau Règlement pour ce Client')
+                    ->url(fn () => ReglementResource::getUrl('create', ['client_id' => $this->getOwnerRecord()->id]))
+                    ->icon('heroicon-o-plus-circle'),
+            ])
+            ->actions([
+                Tables\Actions\Action::make('view_reglement')
+                    ->label('Voir le Détail')
+                    ->icon('heroicon-o-arrow-top-right-on-square')
+                    ->url(fn ($record): string => ReglementResource::getUrl('edit', ['record' => $record])),
+            ]);
+    }
+
+    public function isReadOnly(): bool
+    {
+        return true;
     }
 }

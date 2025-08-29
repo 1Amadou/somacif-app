@@ -40,10 +40,12 @@ class InvoiceController extends Controller
      */
     public function downloadOrderInvoice(Order $order)
     {
-        $pdf = Pdf::loadView('invoices.order-invoice', [
-            'order' => $order
-        ]);
-
-        return $pdf->download('facture-' . $order->numero_commande . '.pdf');
+        // Chargement des relations imbriquées nécessaires pour la vue de la facture
+        $order->load(['items.uniteDeVente.product', 'client']);
+        
+        // CORRECTION : Utilisez le nom correct du fichier de vue
+        // Le nom de la vue est 'invoices.order-invoice', pas 'invoices.commande-facture'
+        $pdf = PDF::loadView('invoices.order-invoice', compact('order'));
+        return $pdf->download('facture-commande-' . $order->numero_commande . '.pdf');
     }
 }

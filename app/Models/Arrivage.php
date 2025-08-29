@@ -17,6 +17,7 @@ class Arrivage extends Model
         'details_produits',
         'notes',
         'user_id',
+        'decharge_signee_path',
     ];
 
     protected $casts = [

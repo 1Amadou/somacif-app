@@ -3,9 +3,8 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ClientResource\Pages;
-use App\Filament\Resources\ClientResource\RelationManagers;
+use App\Filament\Resources\ClientResource\RelationManagers; // S'assurer que cette ligne est présente
 use App\Models\Client;
-use App\Models\PointDeVente;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -27,50 +26,34 @@ class ClientResource extends Resource
             ->schema([
                 Forms\Components\Section::make('Informations Générales')
                     ->schema([
-                        Forms\Components\TextInput::make('nom')
-                            ->required()
-                            ->maxLength(255),
+                        Forms\Components\TextInput::make('nom')->required()->maxLength(255),
                         Forms\Components\Select::make('type')
                             ->options([
                                 'Grossiste' => 'Grossiste',
                                 'Hôtel/Restaurant' => 'Hôtel/Restaurant',
                                 'Particulier' => 'Particulier',
-                            ])
-                            ->required(),
-                        Forms\Components\TextInput::make('telephone')
-                            ->tel()
-                            ->required(),
-                        Forms\Components\TextInput::make('email')
-                            ->email()
-                            ->maxLength(255),
+                            ])->required(),
+                        Forms\Components\TextInput::make('telephone')->tel()->required(),
+                        Forms\Components\TextInput::make('email')->email()->maxLength(255),
                     ])->columns(2),
 
                 Forms\Components\Section::make('Informations de Connexion (Portail Client)')
                     ->schema([
                         Forms\Components\TextInput::make('identifiant_unique_somacif')
                             ->label('Identifiant Unique')
-                            ->helperText('Généré automatiquement à la création. Non modifiable.')
                             ->disabled()
-                            ->dehydrated(fn ($state) => filled($state)) // S'assure qu'il est sauvegardé à la création
+                            ->dehydrated(fn ($state) => filled($state))
                             ->default(fn () => 'SOM-' . Str::upper(Str::random(8))),
                         Forms\Components\TextInput::make('password')
                             ->label('Nouveau Mot de Passe')
                             ->password()
                             ->dehydrateStateUsing(fn ($state) => Hash::make($state))
                             ->dehydrated(fn ($state) => filled($state))
-                            ->required(fn (string $context): bool => $context === 'create')
-                            ->helperText('Laissez vide pour ne pas changer le mot de passe.'),
+                            ->required(fn (string $context): bool => $context === 'create'),
                     ])->columns(2),
                 
-                Forms\Components\Section::make('Points de Vente Associés')
-                    ->schema([
-                         Forms\Components\Select::make('pointsDeVente')
-                            ->relationship('pointsDeVente', 'nom')
-                            ->multiple()
-                            ->preload()
-                            ->searchable()
-                            ->helperText('Associez ce client à un ou plusieurs points de vente.'),
-                    ]),
+                // La section "Points de Vente Associés" a été supprimée d'ici
+                // Elle est maintenant gérée par le RelationManager ci-dessous
             ]);
     }
 
@@ -80,29 +63,24 @@ class ClientResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('nom')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('identifiant_unique_somacif')->label('ID Unique')->searchable(),
-                Tables\Columns\TextColumn::make('pointsDeVente.nom')->label('Points de Vente')->badge(),
+                // Cette colonne compte maintenant le nombre de points de vente
+                Tables\Columns\TextColumn::make('pointsDeVente_count')->counts('pointsDeVente')->label('Points de Vente')->badge(),
                 Tables\Columns\TextColumn::make('type')->badge(),
                 Tables\Columns\TextColumn::make('telephone'),
-            ])
-            ->filters([
-                //
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\ViewAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
             ]);
     }
 
     public static function getRelations(): array
     {
         return [
+            // ON ACTIVE NOS RELATION MANAGERS ICI
+            RelationManagers\PointsDeVenteRelationManager::class,
             RelationManagers\OrdersRelationManager::class,
-            RelationManagers\ReglementsRelationManager::class, // Affiche les règlements de ce client
+            RelationManagers\ReglementsRelationManager::class,
         ];
     }
 

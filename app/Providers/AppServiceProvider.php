@@ -55,6 +55,7 @@ class AppServiceProvider extends ServiceProvider
         Order::observe(OrderObserver::class);
         OrderItem::observe(OrderItemObserver::class);
         Reglement::observe(ReglementObserver::class);
+        
     }
 
     // ON AJOUTE CETTE MÉTHODE POUR CHARGER NOS FICHIERS DE ROUTES
