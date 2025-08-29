@@ -14,7 +14,7 @@ class LivreurResource extends Resource
 {
     protected static ?string $model = Livreur::class;
     protected static ?string $navigationIcon = 'heroicon-o-truck';
-    protected static ?string $navigationGroup = 'Logistique';
+    protected static ?string $navigationGroup = 'Partenaires';
 
     public static function form(Form $form): Form
     {

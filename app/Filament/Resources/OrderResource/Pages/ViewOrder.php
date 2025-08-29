@@ -3,13 +3,11 @@
 namespace App\Filament\Resources\OrderResource\Pages;
 
 use App\Filament\Resources\OrderResource;
-use App\Models\Livreur;
 use App\Models\Order;
 use Filament\Actions;
-use Filament\Forms;
-use Filament\Infolists\Infolist;
-use Filament\Notifications\Notification; // Assurez-vous que cette ligne est présente
 use Filament\Resources\Pages\ViewRecord;
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
 
 class ViewOrder extends ViewRecord
 {
@@ -18,33 +16,57 @@ class ViewOrder extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            // Bouton pour imprimer la facture
+            Actions\Action::make('print_invoice')
+                ->label('Imprimer la Facture')
+                ->color('success')
+                ->icon('heroicon-o-printer')
+                ->url(fn (Order $record): string => route('order.invoice.download', $record))
+                ->openUrlInNewTab(),
             Actions\EditAction::make(),
-            Actions\Action::make('assignLivreur')
-                ->label('Assigner un Livreur')
-                ->icon('heroicon-o-truck')
-                ->form([
-                    Forms\Components\Select::make('livreurId')
-                        ->label('Choisir un livreur')
-                        ->options(Livreur::all()->pluck('name', 'id'))
-                        ->required(),
-                ])
-                ->action(function (Order $record, array $data): void {
-                    $record->livreur_id = $data['livreurId'];
-                    $record->statut = 'En cours de livraison';
-                    $record->save();
-                    
-                    // On envoie une notification de succès
-                    Notification::make()
-                        ->title('Livreur assigné avec succès')
-                        ->success()
-                        ->send();
-                })
-                ->visible(fn (Order $record) => $record->statut !== 'Livrée' && $record->statut !== 'Annulée'),
         ];
     }
 
     public function infolist(Infolist $infolist): Infolist
     {
-        return static::getResource()::infolist($infolist);
+        return $infolist
+            ->schema([
+                Infolists\Components\Section::make('Informations sur la Commande')
+                    ->schema([
+                        Infolists\Components\TextEntry::make('numero_commande'),
+                        Infolists\Components\TextEntry::make('statut')->badge(),
+                        Infolists\Components\TextEntry::make('created_at')->label('Date de création')->dateTime('d/m/Y H:i'),
+                    ])->columns(3),
+
+                Infolists\Components\Section::make('Client')
+                    ->schema([
+                        Infolists\Components\TextEntry::make('client.nom'),
+                        Infolists\Components\TextEntry::make('client.telephone'),
+                        Infolists\Components\TextEntry::make('client.email'),
+                    ])->columns(3),
+                
+                Infolists\Components\Section::make('Articles Commandés')
+                    ->schema([
+                        Infolists\Components\RepeatableEntry::make('items')
+                            ->label('')
+                            ->schema([
+                                Infolists\Components\TextEntry::make('nom_produit')->label('Produit'),
+                                Infolists\Components\TextEntry::make('calibre'),
+                                Infolists\Components\TextEntry::make('unite')->label('Unité'),
+                                Infolists\Components\TextEntry::make('quantite')->label('Quantité'),
+                                Infolists\Components\TextEntry::make('prix_unitaire')->money('cfa')->label('Prix U.'),
+                                Infolists\Components\TextEntry::make('total')
+                                    ->label('Sous-Total')
+                                    ->money('cfa')
+                                    ->getStateUsing(fn ($record) => $record->quantite * $record->prix_unitaire),
+                            ])->columns(6),
+                    ]),
+
+                Infolists\Components\Section::make('Récapitulatif Financier')
+                    ->schema([
+                        Infolists\Components\TextEntry::make('montant_total')->money('cfa')->label('Montant Total de la commande'),
+                        // Ici, on pourrait ajouter plus tard le total payé et le solde
+                    ]),
+            ]);
     }
 }

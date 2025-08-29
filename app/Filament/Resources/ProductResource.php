@@ -4,7 +4,6 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ProductResource\Pages;
 use App\Filament\Resources\ProductResource\RelationManagers;
-use App\Models\PointDeVente;
 use App\Models\Product;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -12,7 +11,6 @@ use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 
 class ProductResource extends Resource
@@ -20,12 +18,8 @@ class ProductResource extends Resource
     protected static ?string $model = Product::class;
     protected static ?string $navigationIcon = 'heroicon-o-archive-box';
     protected static ?string $navigationLabel = 'Produits';
+    protected static ?string $navigationGroup = 'Stock & Catalogue';
     protected static ?int $navigationSort = 1;
-
-    public static function getEloquentQuery(): Builder
-    {
-        return parent::getEloquentQuery()->withSum('pointsDeVenteStock', 'inventory.quantite_stock');
-    }
 
     public static function form(Form $form): Form
     {
@@ -37,10 +31,13 @@ class ProductResource extends Resource
                             Forms\Components\TextInput::make('nom')->required()->live(onBlur: true)
                                 ->afterStateUpdated(fn (Set $set, ?string $state) => $set('slug', Str::slug($state))),
                             Forms\Components\TextInput::make('slug')->required()->unique(ignoreRecord: true),
-                            Forms\Components\Textarea::make('description_courte')->columnSpanFull(),
+                            Forms\Components\MarkdownEditor::make('description_courte')->columnSpanFull(),
                             Forms\Components\RichEditor::make('description_longue')->label('Description longue')->columnSpanFull(),
                         ])->columns(2),
 
+                        // Onglets pour les détails supplémentaires (si tu en as besoin)
+                        // Tu peux décommenter et adapter cette section
+                        
                         Forms\Components\Tabs\Tab::make('Détails & Recettes')->schema([
                             Forms\Components\TextInput::make('origine'),
                             Forms\Components\TextInput::make('poids_moyen'),
@@ -48,17 +45,7 @@ class ProductResource extends Resource
                             Forms\Components\RichEditor::make('infos_nutritionnelles')->label('Informations Nutritionnelles')->columnSpanFull(),
                             Forms\Components\RichEditor::make('idee_recette')->label('Idée Recette')->columnSpanFull(),
                         ])->columns(3),
-                        
-                        Forms\Components\Tabs\Tab::make('Calibres et Grille Tarifaire')->schema([
-                            Forms\Components\Repeater::make('uniteDeVentes')
-                                ->relationship()->label('Calibres et Prix')->schema([
-                                    Forms\Components\TextInput::make('calibre')->label('Calibre')->required(),
-                                    Forms\Components\TextInput::make('nom_unite')->label('Unité')->default('Carton')->required(),
-                                    Forms\Components\TextInput::make('prix_grossiste')->label('Prix Grossiste')->required()->numeric(),
-                                    Forms\Components\TextInput::make('prix_hotel_restaurant')->label('Prix Hôtel/Restaurant')->required()->numeric(),
-                                    Forms\Components\TextInput::make('prix_particulier')->label('Prix Particulier')->required()->numeric(),
-                                ])->columns(5)->defaultItems(1)->addActionLabel('Ajouter un calibre'),
-                        ]),
+                      
                     ]),
                 ])->columnSpan(['lg' => 2]),
 
@@ -82,17 +69,19 @@ class ProductResource extends Resource
                 ])->columnSpan(['lg' => 1]),
             ])->columns(3);
     }
-    
+
     public static function table(Table $table): Table
     {
-        // ... (La méthode table ne change pas et reste correcte)
         return $table
             ->columns([
                 Tables\Columns\ImageColumn::make('image_principale')->label('Image'),
                 Tables\Columns\TextColumn::make('nom')->searchable()->sortable(),
                 Tables\Columns\IconColumn::make('is_visible')->label('Visibilité')->boolean(),
-                Tables\Columns\TextColumn::make('unite_de_ventes_count')->label('Calibres')->counts('uniteDeVentes'),
-                Tables\Columns\TextColumn::make('points_de_vente_stock_sum_quantite_stock')
+                // Compte le nombre de calibres/unités associés à ce produit
+                Tables\Columns\TextColumn::make('uniteDeVentes_count')->label('Calibres')->counts('uniteDeVentes'),
+                // Affiche la somme des stocks de toutes ses unités de vente
+                Tables\Columns\TextColumn::make('uniteDeVentes_sum_stock')
+                    ->sum('uniteDeVentes', 'stock')
                     ->label('Stock Total')
                     ->numeric()
                     ->sortable(),
@@ -104,11 +93,12 @@ class ProductResource extends Resource
 
     public static function getRelations(): array
     {
+        // On s'assure d'utiliser notre nouveau manager de relation pour les unités de vente
         return [
-            RelationManagers\PointsDeVenteStockRelationManager::class,
+            RelationManagers\UniteDeVentesRelationManager::class,
         ];
     }
-    
+
     public static function getPages(): array
     {
         return [

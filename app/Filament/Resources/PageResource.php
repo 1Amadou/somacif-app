@@ -15,6 +15,7 @@ class PageResource extends Resource
     protected static ?string $model = Page::class;
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
     protected static ?string $navigationLabel = 'Contenu des Pages';
+    protected static ?string $navigationGroup = 'Contenu & Site Web';
     protected static ?int $navigationSort = 4;
 
     public static function canCreate(): bool

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class Order extends Model
 {
@@ -58,4 +59,21 @@ class Order extends Model
     {
         return $this->montant_total - $this->amount_paid;
     }
+    public function items(): HasMany
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+    /**
+     * Récupère tous les règlements du client associé à cette commande.
+     */
+    // public function reglements(): HasManyThrough
+    // {
+    //     // On dit à Laravel : "Trouve les règlements (Reglement) EN PASSANT PAR le client (Client)"
+    //     return $this->hasManyThrough(Reglement::class, Client::class, 'id', 'client_id', 'client_id', 'id');
+    // }
+    public function reglements()
+{
+    return $this->belongsToMany(Reglement::class);
+}
+    
 }

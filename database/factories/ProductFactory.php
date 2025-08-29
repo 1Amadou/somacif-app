@@ -3,21 +3,19 @@
 namespace Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
-/**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Product>
- */
 class ProductFactory extends Factory
 {
-    /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
+        $nom = $this->faker->unique()->words(2, true);
         return [
-            //
+            'nom' => Str::title($nom),
+            'slug' => Str::slug($nom),
+            'description_courte' => $this->faker->sentence(),
+            'description_longue' => $this->faker->paragraph(3),
+            'is_visible' => true,
         ];
     }
 }

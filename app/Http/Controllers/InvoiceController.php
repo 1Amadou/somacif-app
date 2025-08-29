@@ -2,7 +2,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
-use Barryvdh\DomPDF\Facade\Pdf; // Importez la façade PDF
+use Barryvdh\DomPDF\Facade\Pdf; 
+use App\Models\Reglement;
 
 class InvoiceController extends Controller
 {
@@ -20,5 +21,29 @@ class InvoiceController extends Controller
 
         // On propose le téléchargement du PDF
         return $pdf->download('Facture-SOMACIF-' . $order->numero_commande . '.pdf');
+    }
+
+    /**
+     * Génère et télécharge le PDF d'un bordereau de règlement.
+     */
+    public function downloadReglementPdf(Reglement $reglement)
+    {
+        $pdf = Pdf::loadView('invoices.reglement-invoice', [
+            'reglement' => $reglement
+        ]);
+
+        return $pdf->download('bordereau-reglement-' . $reglement->id . '.pdf');
+    }
+
+     /**
+     * Génère et télécharge le PDF d'une facture de commande.
+     */
+    public function downloadOrderInvoice(Order $order)
+    {
+        $pdf = Pdf::loadView('invoices.order-invoice', [
+            'order' => $order
+        ]);
+
+        return $pdf->download('facture-' . $order->numero_commande . '.pdf');
     }
 }

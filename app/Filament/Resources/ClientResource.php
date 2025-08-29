@@ -3,51 +3,74 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ClientResource\Pages;
-use App\Filament\Resources\ClientResource\RelationManagers; // Important
+use App\Filament\Resources\ClientResource\RelationManagers;
 use App\Models\Client;
+use App\Models\PointDeVente;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class ClientResource extends Resource
 {
     protected static ?string $model = Client::class;
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
-    protected static ?string $navigationLabel = 'Partenaires';
-    protected static ?int $navigationSort = 2;
-
-    public static function getRecordTitle(?Model $record): ?string
-    {
-        return $record?->nom ?? 'Partenaire';
-    }
+    protected static ?string $navigationGroup = 'Partenaires';
+    protected static ?int $navigationSort = 1;
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Informations Principales')->schema([
-                    Forms\Components\TextInput::make('nom')->required(),
-                    Forms\Components\Select::make('type')->options(['Grossiste' => 'Grossiste', 'Hôtel/Restaurant' => 'Hôtel/Restaurant', 'Particulier' => 'Particulier'])->required(),
-                    Forms\Components\Select::make('status')->options(['pending' => 'En attente', 'approved' => 'Approuvé', 'rejected' => 'Rejeté'])->required(),
-                    Forms\Components\TextInput::make('identifiant_unique_somacif')->label('Identifiant Unique'),
-                ])->columns(2),
-                Forms\Components\Section::make('Coordonnées & Logistique')->schema([
-                    Forms\Components\TextInput::make('telephone')->tel()->required(),
-                    Forms\Components\TextInput::make('email')->email(),
-                    Forms\Components\TagsInput::make('entrepots_de_livraison')->label('Entrepôts de livraison'),
-                ])->columns(2),
-                Forms\Components\Section::make('Documents & Légal')->schema([
-                    Forms\Components\FileUpload::make('contract_path')
-                        ->label('Contrat signé (PDF)')
-                        ->disk('public')->directory('contracts')
-                        ->acceptedFileTypes(['application/pdf']),
-                    Forms\Components\Placeholder::make('terms_accepted_at')
-                        ->label('CGU acceptées le')
-                        ->content(fn (?Client $record) => $record?->terms_accepted_at ? $record->terms_accepted_at->format('d/m/Y à H:i') : 'Non acceptées'),
-                ]),
+                Forms\Components\Section::make('Informations Générales')
+                    ->schema([
+                        Forms\Components\TextInput::make('nom')
+                            ->required()
+                            ->maxLength(255),
+                        Forms\Components\Select::make('type')
+                            ->options([
+                                'Grossiste' => 'Grossiste',
+                                'Hôtel/Restaurant' => 'Hôtel/Restaurant',
+                                'Particulier' => 'Particulier',
+                            ])
+                            ->required(),
+                        Forms\Components\TextInput::make('telephone')
+                            ->tel()
+                            ->required(),
+                        Forms\Components\TextInput::make('email')
+                            ->email()
+                            ->maxLength(255),
+                    ])->columns(2),
+
+                Forms\Components\Section::make('Informations de Connexion (Portail Client)')
+                    ->schema([
+                        Forms\Components\TextInput::make('identifiant_unique_somacif')
+                            ->label('Identifiant Unique')
+                            ->helperText('Généré automatiquement à la création. Non modifiable.')
+                            ->disabled()
+                            ->dehydrated(fn ($state) => filled($state)) // S'assure qu'il est sauvegardé à la création
+                            ->default(fn () => 'SOM-' . Str::upper(Str::random(8))),
+                        Forms\Components\TextInput::make('password')
+                            ->label('Nouveau Mot de Passe')
+                            ->password()
+                            ->dehydrateStateUsing(fn ($state) => Hash::make($state))
+                            ->dehydrated(fn ($state) => filled($state))
+                            ->required(fn (string $context): bool => $context === 'create')
+                            ->helperText('Laissez vide pour ne pas changer le mot de passe.'),
+                    ])->columns(2),
+                
+                Forms\Components\Section::make('Points de Vente Associés')
+                    ->schema([
+                         Forms\Components\Select::make('pointsDeVente')
+                            ->relationship('pointsDeVente', 'nom')
+                            ->multiple()
+                            ->preload()
+                            ->searchable()
+                            ->helperText('Associez ce client à un ou plusieurs points de vente.'),
+                    ]),
             ]);
     }
 
@@ -56,37 +79,40 @@ class ClientResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('nom')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('status')->badge()->color(fn (string $state): string => match ($state) {
-                    'pending' => 'warning', 'approved' => 'success', 'rejected' => 'danger',
-                })->formatStateUsing(fn (string $state): string => match ($state) {
-                    'pending' => 'En attente', 'approved' => 'Approuvé', 'rejected' => 'Rejeté',
-                }),
+                Tables\Columns\TextColumn::make('identifiant_unique_somacif')->label('ID Unique')->searchable(),
+                Tables\Columns\TextColumn::make('pointsDeVente.nom')->label('Points de Vente')->badge(),
                 Tables\Columns\TextColumn::make('type')->badge(),
                 Tables\Columns\TextColumn::make('telephone'),
-                Tables\Columns\IconColumn::make('contract_path')->label('Contrat')->boolean(),
+            ])
+            ->filters([
+                //
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
+                Tables\Actions\ViewAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
             ]);
     }
-    
-    // ON DÉCLARE LES GESTIONNAIRES QUI APPARAÎTRONT SUR LA PAGE DE VUE
+
     public static function getRelations(): array
     {
         return [
             RelationManagers\OrdersRelationManager::class,
-            RelationManagers\LoginLogsRelationManager::class,
+            RelationManagers\ReglementsRelationManager::class, // Affiche les règlements de ce client
         ];
     }
-    
+
     public static function getPages(): array
     {
         return [
             'index' => Pages\ListClients::route('/'),
             'create' => Pages\CreateClient::route('/create'),
-            // La page de vue va maintenant afficher les "relations" ci-dessus
-            'view' => Pages\ViewClient::route('/{record}'), 
             'edit' => Pages\EditClient::route('/{record}/edit'),
+            'view' => Pages\ViewClient::route('/{record}'),
         ];
-    }    
+    }
 }

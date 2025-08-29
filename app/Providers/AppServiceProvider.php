@@ -8,6 +8,15 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Route; 
 use App\Models\Client;
 use App\Models\Page;
+use App\Models\Arrivage;
+use App\Observers\ArrivageObserver;
+use App\Models\Order;
+use App\Observers\OrderObserver; 
+use App\Models\OrderItem;
+use App\Observers\OrderItemObserver;
+use App\Models\Reglement; 
+use App\Observers\ReglementObserver; 
+
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -41,6 +50,11 @@ class AppServiceProvider extends ServiceProvider
         } catch (\Exception $e) {
             return;
         }
+
+        Arrivage::observe(ArrivageObserver::class);
+        Order::observe(OrderObserver::class);
+        OrderItem::observe(OrderItemObserver::class);
+        Reglement::observe(ReglementObserver::class);
     }
 
     // ON AJOUTE CETTE MÉTHODE POUR CHARGER NOS FICHIERS DE ROUTES

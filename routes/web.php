@@ -80,5 +80,7 @@ Route::middleware(['client.auth'])->group(function () {
     Route::get('/mon-compte/contrat-et-conditions', \App\Livewire\Client\ContractPage::class)->name('client.contract');
     Route::get('/commande/finaliser', \App\Livewire\CheckoutPage::class)->name('checkout');
 });
+Route::get('/reglements/{reglement}/pdf', [InvoiceController::class, 'downloadReglementPdf'])->name('reglement.pdf')->middleware('auth');
+Route::get('/orders/{order}/invoice', [InvoiceController::class, 'downloadOrderInvoice'])->name('order.invoice.download')->middleware('auth');
 
 // require __DIR__.'/auth.php'; // On s'assure que ceci est commenté ou supprimé

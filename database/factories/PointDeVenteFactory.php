@@ -17,7 +17,10 @@ class PointDeVenteFactory extends Factory
     public function definition(): array
     {
         return [
-            //
+            'nom' => 'Point de Vente ' . $this->faker->city,
+            'type' => $this->faker->randomElement(['Principal', 'Secondaire', 'Partenaire']),
+            'adresse' => $this->faker->address,
+            'telephone' => $this->faker->phoneNumber,
         ];
     }
 }

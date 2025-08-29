@@ -1,20 +1,38 @@
 <?php
+
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
-    public function up(): void {
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
         Schema::create('inventory', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('product_id')->constrained()->onDelete('cascade');
-            $table->foreignId('point_de_vente_id')->constrained('point_de_ventes')->onDelete('cascade');
-            $table->integer('quantite_stock');
+            // CORRECTION 1 : On lie l'inventaire à une 'unite_de_vente_id' et non 'product_id'
+            $table->foreignId('unite_de_vente_id')->constrained('unite_de_ventes')->cascadeOnDelete();
+            
+            $table->foreignId('point_de_vente_id')->constrained('point_de_ventes')->cascadeOnDelete();
+
+            // CORRECTION 2 : On nomme la colonne 'quantite_stock' pour être cohérent
+            $table->integer('quantite_stock')->default(0);
+            
             $table->timestamps();
-            $table->unique(['product_id', 'point_de_vente_id']); // Un produit ne peut avoir qu'une seule entrée de stock par point de vente
+
+            // La clé unique doit maintenant être sur l'unité de vente et le point de vente
+            $table->unique(['unite_de_vente_id', 'point_de_vente_id']);
         });
     }
-    public function down(): void {
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
         Schema::dropIfExists('inventory');
     }
 };

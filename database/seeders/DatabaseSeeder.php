@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
             PostSeeder::class,
             PageSeeder::class,
             NotificationTemplateSeeder::class, 
+            FournisseurSeeder::class,
         ]);
     }
 }
