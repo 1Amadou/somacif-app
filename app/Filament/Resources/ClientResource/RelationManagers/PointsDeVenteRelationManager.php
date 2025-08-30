@@ -12,6 +12,7 @@ use App\Filament\Resources\PointDeVenteResource;
 class PointsDeVenteRelationManager extends RelationManager
 {
     protected static string $relationship = 'pointsDeVente';
+    protected static ?string $title = 'Points de Vente Associés';
 
     public function form(Form $form): Form
     {
@@ -20,7 +21,9 @@ class PointsDeVenteRelationManager extends RelationManager
                 Forms\Components\TextInput::make('nom')
                     ->required()
                     ->maxLength(255),
-                Forms\Components\Select::make('type')->options(['Principal' => 'Principal', 'Secondaire' => 'Secondaire', 'Partenaire' => 'Partenaire'])->required(),
+                Forms\Components\Select::make('type')
+                    ->options(['Principal' => 'Principal', 'Secondaire' => 'Secondaire', 'Partenaire' => 'Partenaire'])
+                    ->required(),
                 Forms\Components\TextInput::make('adresse'),
             ]);
     }
@@ -35,15 +38,18 @@ class PointsDeVenteRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('adresse')->searchable(),
             ])
             ->headerActions([
-                Tables\Actions\CreateAction::make(),
+                Tables\Actions\CreateAction::make()
+                    ->label('Ajouter un Point de Vente'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
                 
+                // ACTION CLÉ : Accès direct à la page de gestion complète du point de vente.
                 Tables\Actions\Action::make('view_details')
-                    ->label('Gérer le Point de Vente')
+                    ->label('Gérer et Voir le Stock')
                     ->icon('heroicon-o-arrow-top-right-on-square')
-                    ->url(fn ($record): string => PointDeVenteResource::getUrl('edit', ['record' => $record]))
+                    ->color('secondary')
+                    ->url(fn ($record): string => PointDeVenteResource::getUrl('view', ['record' => $record])),
             ]);
     }
 }

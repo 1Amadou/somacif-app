@@ -10,13 +10,16 @@ class Inventory extends Model
 {
     use HasFactory;
 
-    // On précise le nom de la table, car Laravel chercherait "inventories" par défaut
     protected $table = 'inventory';
 
     protected $fillable = [
         'point_de_vente_id',
         'unite_de_vente_id',
         'quantite_stock',
+    ];
+
+    protected $casts = [
+        'quantite_stock' => 'integer',
     ];
 
     public function pointDeVente(): BelongsTo
@@ -27,5 +30,10 @@ class Inventory extends Model
     public function uniteDeVente(): BelongsTo
     {
         return $this->belongsTo(UniteDeVente::class);
+    }
+
+    public function scopeOfPointDeVente($query, $pointDeVenteId)
+    {
+        return $query->where('point_de_vente_id', $pointDeVenteId);
     }
 }

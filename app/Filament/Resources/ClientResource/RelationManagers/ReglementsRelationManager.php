@@ -28,8 +28,8 @@ class ReglementsRelationManager extends RelationManager
             ->columns([
                 Tables\Columns\TextColumn::make('date_reglement')->label('Date')->date('d/m/Y')->sortable(),
                 Tables\Columns\TextColumn::make('montant_verse')->label('Montant Versé')->money('XOF')->sortable(),
+                Tables\Columns\TextColumn::make('montant_calcule')->label('Ventes Déclarées')->money('XOF')->sortable(),
                 Tables\Columns\TextColumn::make('methode_paiement')->label('Méthode')->badge(),
-                Tables\Columns\TextColumn::make('reference_paiement')->label('Référence'),
             ])
             ->filters([
                 Filter::make('date_reglement')
@@ -44,15 +44,14 @@ class ReglementsRelationManager extends RelationManager
                     })
             ])
             ->headerActions([
+                 // ACTION CLÉ : Crée un règlement pré-rempli pour ce client.
                 Tables\Actions\Action::make('create_reglement')
-                    ->label('Nouveau Règlement pour ce Client')
+                    ->label('Nouveau Règlement')
                     ->url(fn () => ReglementResource::getUrl('create', ['client_id' => $this->getOwnerRecord()->id]))
                     ->icon('heroicon-o-plus-circle'),
             ])
             ->actions([
-                Tables\Actions\Action::make('view_reglement')
-                    ->label('Voir le Détail')
-                    ->icon('heroicon-o-arrow-top-right-on-square')
+                Tables\Actions\Action::make('view_reglement')->label('Détails')->icon('heroicon-o-pencil-square')
                     ->url(fn ($record): string => ReglementResource::getUrl('edit', ['record' => $record])),
             ]);
     }

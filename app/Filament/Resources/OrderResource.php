@@ -12,10 +12,10 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
+use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
@@ -34,9 +34,10 @@ class OrderResource extends Resource
             ->schema([
                 Forms\Components\Wizard::make([
                     Forms\Components\Wizard\Step::make('Client & Destination')
-                        ->description('Sélectionnez le client et son point de vente de livraison.')
+                        ->description('Sélectionnez le client et son point de vente de livraison. Le point de vente changera dynamiquement selon le client.')
                         ->schema([
                             Forms\Components\Select::make('client_id')
+                                ->label('Client')
                                 ->relationship('client', 'nom')
                                 ->searchable()
                                 ->preload()
@@ -51,47 +52,40 @@ class OrderResource extends Resource
                                     ->pluck('nom', 'id'))
                                 ->searchable()
                                 ->required()
-                                ->visible(fn (Get $get): bool => filled($get('client_id')) && Client::find($get('client_id'))?->pointsDeVente()->exists()),
+                                ->visible(fn (Get $get) =>
+                                    filled($get('client_id')) && Client::find($get('client_id'))?->pointsDeVente()->exists()),
 
-                            Forms\Components\Placeholder::make('no_pdv_placeholder')
-                                ->content(function (Get $get) {
-                                    $clientId = $get('client_id');
-                                    if (filled($clientId) && !Client::find($clientId)?->pointsDeVente()->exists()) {
-                                        $clientUrl = ClientResource::getUrl('edit', ['record' => $clientId]);
-                                        return new HtmlString(
-                                            '<div class="fi-placeholder text-sm text-gray-500" style="padding: 10px; border-radius: 5px; background-color: #fffbe6; color: #f59e0b;">' .
-                                            '<strong>Attention:</strong> Ce client n\'a aucun point de vente associé. <br>' .
-                                            '<a href="' . $clientUrl . '" style="text-decoration: underline; font-weight: bold;">Cliquez ici pour lui en assigner un avant de continuer.</a>' .
-                                            '</div>'
-                                        );
-                                    }
-                                    return '';
-                                })
-                                ->visible(fn (Get $get): bool => filled($get('client_id')) && !Client::find($get('client_id'))?->pointsDeVente()->exists()),
+                                    Forms\Components\Placeholder::make('client_points_de_vente_info')
+                                    ->content(function (Get $get) {
+                                        $clientId = $get('client_id');
+                                        if (filled($clientId) && !Client::find($clientId)?->pointsDeVente()->exists()) {
+                                            $url = ClientResource::getUrl('edit', ['record' => $clientId]);
+                                            return new HtmlString(
+                                                '<p class="text-yellow-700 bg-yellow-100 p-3 rounded">' .
+                                                'Attention : Ce client n\'a aucun point de vente assigné. ' .
+                                                '<a href="' . $url . '" class="underline font-semibold" target="_blank">Ajouter un point de vente</a> avant de continuer.' .
+                                                '</p>'
+                                            );
+                                        }
+                                        return '';
+                                    })
+                                ->visible(fn (Get $get) => filled($get('client_id')) && !Client::find($get('client_id'))?->pointsDeVente()->exists()),
                         ]),
 
-                    Forms\Components\Wizard\Step::make('Contenu de la Commande')
-                        ->description('Ajoutez les produits et les quantités à livrer.')
+                    Forms\Components\Wizard\Step::make('Articles et Quantités')
+                        ->description('Ajoutez les produits, calibres et quantités. Sélectionnez uniquement parmi ceux en stock.')
                         ->schema([
                             Forms\Components\Repeater::make('items')
                                 ->minItems(1)
                                 ->schema([
                                     Forms\Components\Select::make('unite_de_vente_id')
                                         ->label('Produit (Unité / Calibre)')
-                                        ->options(UniteDeVente::with('product')->get()->mapWithKeys(function ($unite) {
-                                            return [$unite->id => "{$unite->nom_complet} (Stock: {$unite->stock})"];
-                                        }))
+                                        ->options(fn () => UniteDeVente::where('stock', '>', 0)
+                                            ->get()
+                                            ->mapWithKeys(fn ($item) =>
+                                                [$item->id => "{$item->nom_complet} (Stock: {$item->stock})"])
+                                            ->toArray())
                                         ->searchable()
-                                        ->getSearchResultsUsing(fn (string $search) => UniteDeVente::query()
-                                            ->join('products', 'unite_de_ventes.product_id', '=', 'products.id')
-                                            ->where('unite_de_ventes.stock', '>', 0)
-                                            ->where(function (Builder $query) use ($search) {
-                                                $query->where('products.nom', 'like', "%{$search}%")
-                                                    ->orWhere('unite_de_ventes.nom_unite', 'like', "%{$search}%")
-                                                    ->orWhere('unite_de_ventes.calibre', 'like', "%{$search}%");
-                                            })
-                                            ->pluck('unite_de_ventes.nom_complet', 'unite_de_ventes.id'))
-                                        ->getOptionLabelFromRecordUsing(fn (UniteDeVente $record) => "{$record->nom_complet} (Stock: {$record->stock})")
                                         ->required()
                                         ->reactive()
                                         ->afterStateUpdated(function (Get $get, Set $set, $state) {
@@ -107,8 +101,6 @@ class OrderResource extends Resource
                                                 $set('prix_unitaire', $price);
                                             }
                                         })
-                                        ->distinct()
-                                        ->disableOptionsWhenSelectedInSiblingRepeaterItems()
                                         ->columnSpan(4),
 
                                     Forms\Components\TextInput::make('quantite')
@@ -117,57 +109,43 @@ class OrderResource extends Resource
                                         ->required()
                                         ->default(1)
                                         ->minValue(1)
-                                        ->live(onBlur: true)
-                                        ->afterStateUpdated(function ($state, Get $get, Set $set) {
-                                            $prix = $get('prix_unitaire');
-                                            if ($state && $prix) {
-                                                $set('montant_ligne', $state * $prix);
-                                            }
+                                        ->rule(function (Get $get) {
+                                            return function (string $attribute, $value, \Closure $fail) use ($get) {
+                                                $unite = UniteDeVente::find($get('unite_de_vente_id'));
+                                                if ($unite && $unite->stock < $value) {
+                                                    $fail("Quantité demandée ({$value}) supérieure au stock disponible ({$unite->stock}).");
+                                                }
+                                            };
                                         })
-                                        ->columnSpan(2),
-                                    
-                                    Forms\Components\TextInput::make('prix_unitaire')
-                                        ->label('Prix Unitaire')
-                                        ->numeric()
-                                        ->required()
-                                        ->helperText('Auto-défini. Le modifier mettra à jour le prix interne.')
                                         ->live(onBlur: true)
-                                        ->afterStateUpdated(function ($state, Get $get, Set $set) {
-                                            $quantite = $get('quantite');
-                                            if ($state && $quantite) {
-                                                $set('montant_ligne', $state * $quantite);
-                                            }
-                                        })
                                         ->columnSpan(2),
 
-                                    Forms\Components\TextInput::make('montant_ligne')
-                                        ->label('Montant Ligne')
+                                    Forms\Components\TextInput::make('prix_unitaire')
+                                        ->label('Prix Unitaire (CFA)')
                                         ->numeric()
-                                        ->disabled()
-                                        ->dehydrated(false)
-                                        ->columnSpan(2)
-                                        ->default(0),
+                                        ->required()
+                                        ->live(onBlur: true)
+                                        ->columnSpan(2),
                                 ])
                                 ->columns(8)
-                                ->addActionLabel('Ajouter un produit')
-                                ->reorderable(true),
+                                ->addActionLabel('Ajouter un produit'),
                         ]),
-                    
-                    Forms\Components\Wizard\Step::make('Statut & Finalisation')
-                        ->description('Vérifiez les informations et validez la commande.')
+
+                    Forms\Components\Wizard\Step::make('Statut & Confirmation')
+                        ->description('Vérifiez les détails et confirmez votre commande. Le changement de statut déclenchera la mise à jour du stock.')
                         ->schema([
                             Forms\Components\TextInput::make('numero_commande')
                                 ->label('Numéro de Commande')
                                 ->default('CMD-' . Str::upper(Str::random(8)))
                                 ->disabled()
                                 ->required()
-                                ->unique(Order::class, 'numero_commande', ignoreRecord: true)
-                                ->dehydrated(),
-                            
+                                ->unique(Order::class, 'numero_commande', ignoreRecord: true),
+
                             Forms\Components\Select::make('statut')
+                                ->label('Statut de la commande')
                                 ->options([
                                     'en_attente' => 'En attente',
-                                    'validee' => 'Validée (Déclenche le transfert de stock)',
+                                    'validee' => 'Validée (déclenche transfert stock)',
                                     'prete_pour_livraison' => 'Prête pour livraison',
                                     'en_cours_de_livraison' => 'En cours de livraison',
                                     'livree' => 'Livrée',
@@ -175,11 +153,59 @@ class OrderResource extends Resource
                                 ])
                                 ->required()
                                 ->default('en_attente'),
-                            
+
                             Forms\Components\Textarea::make('notes')
+                                ->label('Notes')
                                 ->columnSpanFull(),
-                        ])
+                        ]),
                 ])->columnSpanFull()
+            ]);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Forms\Components\Section::make('Résumé de la commande')
+                    ->schema([
+                        Forms\Components\TextEntry::make('numero_commande'),
+                        Forms\Components\TextEntry::make('statut')->badge()->color(fn (string $state): string => match ($state) {
+                            'en_attente' => 'warning',
+                            'validee' => 'success',
+                            'annulee' => 'danger',
+                            default => 'gray',
+                        }),
+                        Forms\Components\TextEntry::make('created_at')->label('Date de création')->dateTime('d/m/Y H:i'),
+                    ]),
+
+                Forms\Components\Section::make('Client & Destination')
+                    ->schema([
+                        Forms\Components\TextEntry::make('client.nom'),
+                        Forms\Components\TextEntry::make('pointDeVente.nom')->label('Point de Vente de destination'),
+                    ]),
+
+                Forms\Components\Section::make('Détail des produits')
+                    ->schema([
+                        Forms\Components\RepeatableEntry::make('items')
+                            ->label('')
+                            ->schema([
+                                Forms\Components\TextEntry::make('uniteDeVente.nom_complet')->label('Produit')->columnSpan(2),
+                                Forms\Components\TextEntry::make('quantite')->label('Quantité'),
+                                Forms\Components\TextEntry::make('prix_unitaire')->label('Prix Unitaire')->money('XOF'),
+                                Forms\Components\TextEntry::make('quantite')->label('Sous-total')->money('XOF')
+                                    ->state(fn ($record) => $record->quantite * $record->prix_unitaire),
+                            ])->columns(5),
+                    ]),
+
+                Forms\Components\Section::make('Montant & Paiement')
+                    ->schema([
+                        Forms\Components\TextEntry::make('montant_total')->label('Montant total')->money('XOF')->size('lg'),
+                        Forms\Components\TextEntry::make('montant_paye')->label('Montant payé')->money('XOF')->color('success')->size('lg'),
+                        Forms\Components\TextEntry::make('reste_a_payer')->label('Reste à payer')->money('XOF')
+                            ->color(fn ($record) => $record->montant_total - $record->montant_paye > 0 ? 'warning' : 'success')
+                            ->state(fn ($record) => $record->montant_total - $record->montant_paye)
+                            ->size('lg'),
+                    ])
             ]);
     }
 
@@ -187,63 +213,41 @@ class OrderResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('numero_commande')
-                    ->label('N° Commande')
-                    ->searchable()
-                    ->sortable(),
-                
-                Tables\Columns\TextColumn::make('client.nom')
-                    ->label('Client')
-                    ->searchable()
-                    ->sortable(),
-                
-                Tables\Columns\TextColumn::make('pointDeVente.nom')
-                    ->label('Point de Vente')
-                    ->searchable()
-                    ->sortable(),
-                
-                Tables\Columns\TextColumn::make('statut')
-                    ->badge()
+                Tables\Columns\TextColumn::make('numero_commande')->label('N° Commande')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('client.nom')->label('Client')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('pointDeVente.nom')->label('Point de Vente')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('statut')->badge()
                     ->color(fn (string $state): string => match ($state) {
-                        'en_attente' => 'warning', 
-                        'validee' => 'success', 
-                        'prete_pour_livraison' => 'info',
-                        'en_cours_de_livraison' => 'primary', 
-                        'livree' => 'success', 
+                        'en_attente' => 'warning',
+                        'validee' => 'success',
                         'annulee' => 'danger',
                         default => 'gray',
                     }),
-                
-                Tables\Columns\TextColumn::make('montant_total')
-                    ->label('Montant Total')
-                    ->numeric()
-                    ->sortable()
-                    ->money('XOF'),
-                
-                Tables\Columns\TextColumn::make('statut_paiement')
-                    ->label('Paiement')
-                    ->badge()
+                Tables\Columns\TextColumn::make('montant_total')->label('Montant Total')->numeric()->sortable()->money('XOF'),
+                Tables\Columns\TextColumn::make('statut_paiement')->label('Paiement')->badge()
                     ->color(fn (?string $state): string => match ($state) {
-                        'non_paye' => 'danger', 
-                        'partiellement_paye' => 'warning', 
-                        'paye' => 'success',
+                        'non_regle' => 'danger',
+                        'partiellement_regle' => 'warning',
+                        'completement_regle' => 'success',
                         default => 'gray',
-                    })
-                    ->toggleable(),
-                
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Date')
-                    ->dateTime('d/m/Y')
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    }),
+                Tables\Columns\TextColumn::make('created_at')->label('Date')->dateTime('d/m/Y')->sortable()->toggleable(true),
             ])
             ->defaultSort('created_at', 'desc')
             ->actions([
-                Tables\Actions\EditAction::make(),
                 Tables\Actions\ViewAction::make(),
+                Tables\Actions\EditAction::make(),
             ]);
     }
-    
+
+    public static function getRelations(): array
+    {
+        return [
+            // Ajoutez les RelationManagers ici, ex :
+            // ReglementsRelationManager::class,
+        ];
+    }
+
     public static function getPages(): array
     {
         return [

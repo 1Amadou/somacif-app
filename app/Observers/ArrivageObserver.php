@@ -13,10 +13,6 @@ class ArrivageObserver
         $this->updateStock($arrivage);
     }
 
-    /**
-     * Gère l'événement "updating" (avant la sauvegarde).
-     * On annule d'abord l'impact de l'ancien stock.
-     */
     public function updating(Arrivage $arrivage): void
     {
         $originalDetails = $arrivage->getOriginal('details_produits') ?? [];
@@ -30,18 +26,13 @@ class ArrivageObserver
         }
     }
 
-    /**
-     * Gère l'événement "updated" (après la sauvegarde).
-     * On applique le nouveau stock.
-     */
     public function updated(Arrivage $arrivage): void
     {
         $this->updateStock($arrivage);
     }
-    
+
     public function deleted(Arrivage $arrivage): void
     {
-        // On utilise les données originales avant la suppression
         $details = $arrivage->getOriginal('details_produits') ?? [];
         foreach ($details as $detail) {
             if (isset($detail['unite_de_vente_id'], $detail['quantite_cartons'])) {
@@ -53,9 +44,6 @@ class ArrivageObserver
         }
     }
 
-    /**
-     * Fonction centralisée pour mettre à jour le stock.
-     */
     protected function updateStock(Arrivage $arrivage): void
     {
         foreach ($arrivage->details_produits as $detail) {

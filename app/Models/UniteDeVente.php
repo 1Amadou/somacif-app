@@ -22,7 +22,10 @@ class UniteDeVente extends Model
         'prix_particulier',
     ];
 
-    protected $with = ['product'];
+    // Je vous recommande de ne pas utiliser la propriété $with,
+    // car elle peut impacter les performances de manière imprévue.
+    // Il est préférable de charger les relations manuellement avec `with()` ou `load()`.
+    // protected $with = ['product']; 
 
     public function getNomCompletAttribute(): string
     {
@@ -37,5 +40,18 @@ class UniteDeVente extends Model
     public function orderItems(): HasMany
     {
         return $this->hasMany(OrderItem::class);
+    }
+    
+    // Ajout des relations manquantes pour le suivi
+    // On suppose que les stocks clients sont dans une table `inventories`
+    public function inventories(): HasMany
+    {
+        return $this->hasMany(Inventory::class, 'unite_de_vente_id');
+    }
+
+    // On suppose que les détails des ventes sont dans une table `reglement_items`
+    public function reglementItems(): HasMany
+    {
+        return $this->hasMany(ReglementItem::class, 'unite_de_vente_id');
     }
 }

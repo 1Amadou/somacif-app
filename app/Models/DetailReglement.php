@@ -10,7 +10,6 @@ class DetailReglement extends Model
 {
     use HasFactory;
 
-    // Le nom de la table est 'details_reglement' (avec un s)
     protected $table = 'details_reglement';
 
     protected $fillable = [

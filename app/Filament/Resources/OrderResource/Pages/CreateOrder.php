@@ -5,6 +5,7 @@ namespace App\Filament\Resources\OrderResource\Pages;
 use App\Filament\Resources\OrderResource;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class CreateOrder extends CreateRecord
 {
@@ -19,17 +20,20 @@ class CreateOrder extends CreateRecord
             }
         }
         $data['montant_total'] = $total;
-        // Correction : On utilise le nom de la colonne de la BDD
         $data['statut_paiement'] = 'non_paye';
+
+        if (empty($data['numero_commande'])) {
+            $data['numero_commande'] = 'CMD-' . Str::upper(Str::random(8));
+        }
 
         return $data;
     }
-    
+
     protected function handleRecordCreation(array $data): Model
     {
         $itemsData = $data['items'];
         unset($data['items']);
-        
+
         $order = static::getModel()::create($data);
 
         $order->items()->createMany($itemsData);
