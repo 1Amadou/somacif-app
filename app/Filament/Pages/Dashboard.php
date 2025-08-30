@@ -35,7 +35,7 @@ class Dashboard extends BaseDashboard
             LatestPartnerApplications::class,
 
             //log
-            ClientLoginHistory::class,
+            // ClientLoginHistory::class,
         ];
     }
 }

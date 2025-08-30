@@ -5,7 +5,6 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Route; 
 use App\Models\Client;
 use App\Models\Page;
 use App\Models\Arrivage;
@@ -17,7 +16,6 @@ use App\Observers\OrderItemObserver;
 use App\Models\Reglement; 
 use App\Observers\ReglementObserver; 
 
-
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
@@ -27,9 +25,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // On appelle la méthode pour enregistrer nos routes
-        $this->bootRoutes();
-
+        
+        
         try {
             if (Schema::hasTable('pages')) {
                 View::composer('*', function ($view) {
@@ -48,22 +45,14 @@ class AppServiceProvider extends ServiceProvider
                 });
             }
         } catch (\Exception $e) {
+            // En cas d'erreur (ex: pendant les migrations), on continue sans planter.
             return;
         }
 
+        // L'enregistrement des observers reste, c'est correct.
         Arrivage::observe(ArrivageObserver::class);
         Order::observe(OrderObserver::class);
         OrderItem::observe(OrderItemObserver::class);
         Reglement::observe(ReglementObserver::class);
-        
-    }
-
-    // ON AJOUTE CETTE MÉTHODE POUR CHARGER NOS FICHIERS DE ROUTES
-    protected function bootRoutes(): void
-    {
-        Route::middleware('web')
-            ->prefix('livreur')
-            ->name('livreur.')
-            ->group(base_path('routes/livreur.php'));
     }
 }

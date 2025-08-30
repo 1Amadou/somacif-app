@@ -2,34 +2,41 @@
 
 namespace App\Livewire;
 
+use App\Models\Setting;
+use App\Models\User;
+use App\Notifications\NewContactMessageNotification;
 use Livewire\Component;
 
 class ContactForm extends Component
 {
-    public string $name = '';
-    public string $phone = '';
-    public string $subject = 'Question générale';
-    public string $message = '';
-    public bool $isSent = false;
+    public $nom = '';
+    public $email = '';
+    public $sujet = '';
+    public $message = '';
+    public $isSent = false;
 
-    protected function rules(): array
-    {
-        return [
-            'name' => 'required|string|min:3',
-            'phone' => 'required|string',
-            'subject' => 'required|string',
-            'message' => 'required|string|min:10',
-        ];
-    }
+    protected $rules = [
+        'nom' => 'required|string|max:255',
+        'email' => 'required|email|max:255',
+        'sujet' => 'required|string|max:255',
+        'message' => 'required|string|min:10',
+    ];
 
     public function submit()
     {
-        $this->validate();
+        $data = $this->validate();
 
-        // Logique d'envoi de l'email à l'administrateur (à implémenter)
-        // Mail::to('admin@somacif.com')->send(new ContactMessage($this->name, $this->phone, $this->subject, $this->message));
+        // Notifier l'administrateur
+        // On récupère l'email de notification depuis les paramètres
+        $adminEmail = Setting::where('key', 'admin_notification_email')->value('value');
+        
+        if ($adminEmail) {
+            // On envoie la notification à l'adresse configurée
+            (new User(['email' => $adminEmail]))->notify(new NewContactMessageNotification($data));
+        }
 
-        $this->isSent = true;
+        session()->flash('success', 'Merci pour votre message ! Nous vous répondrons dans les plus brefs délais.');
+        $this->reset();
     }
 
     public function render()

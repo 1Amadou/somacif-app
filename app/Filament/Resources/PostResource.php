@@ -93,11 +93,7 @@ class PostResource extends Resource
                                     ->label('Image de couverture')
                                     ->image()->imageEditor(),
                                 
-                                Select::make('category_id')
-                                    ->relationship('category', 'name', fn (Builder $query) => $query->orderBy('name'))
-                                    ->searchable()
-                                    ->required()
-                                    ->label('Catégorie'),
+                                    Select::make('category_id')->relationship('category', 'nom', fn (Builder $query) => $query->orderBy('nom'))->searchable()->required()->label('Catégorie'),
                             ]),
                     ])
                     ->columnSpan(['lg' => 1]),
@@ -111,7 +107,7 @@ class PostResource extends Resource
             ->columns([
                 ImageColumn::make('image')->label('Image'),
                 TextColumn::make('title')->label('Titre')->searchable()->sortable(),
-                TextColumn::make('category.name')->label('Catégorie')->searchable()->sortable(),
+                TextColumn::make('category.nom')->label('Catégorie')->searchable()->sortable(),
                 BadgeColumn::make('status')
                     ->colors([
                         'warning' => 'draft',
@@ -120,7 +116,7 @@ class PostResource extends Resource
                 TextColumn::make('published_at')->label('Publié le')->date('d/m/Y')->sortable(),
             ])
             ->filters([
-                SelectFilter::make('category')->relationship('category', 'name'),
+                SelectFilter::make('category')->relationship('category', 'nom'),
                 SelectFilter::make('status')->options(['draft' => 'Brouillon', 'published' => 'Publié']),
             ])
             ->actions([

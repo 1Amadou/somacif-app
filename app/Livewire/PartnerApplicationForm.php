@@ -2,54 +2,46 @@
 
 namespace App\Livewire;
 
-use App\Models\Client;
-use App\Models\NotificationTemplate;
+use App\Models\PartnerApplication;
+use App\Models\User;
 use App\Notifications\NewPartnerRequestNotification;
-use Illuminate\Support\Facades\Notification as Notifier;
+use Filament\Notifications\Notification as FilamentNotification;
 use Livewire\Component;
 
 class PartnerApplicationForm extends Component
 {
-    public string $company_name = '';
-    public string $company_type = 'Hôtel/Restaurant';
-    public string $contact_name = '';
-    public string $phone = '';
-    public string $message = '';
-    public bool $applicationSubmitted = false;
-    public string $generatedId = '';
+    public $nom_entreprise = '';
+    public $nom_contact = '';
+    public $telephone = '';
+    public $email = '';
+    public $secteur_activite = '';
+    public $message = '';
 
-    protected function rules(): array
+    protected function rules()
     {
         return [
-            'company_name' => 'required|string|max:255',
-            'company_type' => 'required|string',
-            'contact_name' => 'required|string|max:255',
-            'phone' => 'required|string|unique:clients,telephone',
-            'message' => 'required|string|min:20',
+            'nom_entreprise' => 'required|string|max:255',
+            'nom_contact' => 'required|string|max:255',
+            'telephone' => 'required|string|max:20',
+            'email' => 'required|email|max:255',
+            'secteur_activite' => 'required|string',
+            'message' => 'nullable|string',
         ];
     }
 
     public function submit()
     {
-        $this->validate();
-        $this->generatedId = 'TEMP-' . time();
+        $data = $this->validate();
+        $application = PartnerApplication::create($data);
 
-        $client = Client::create([
-            'nom' => $this->company_name,
-            'type' => $this->company_type,
-            'status' => 'pending',
-            'telephone' => $this->phone,
-            'identifiant_unique_somacif' => $this->generatedId,
-        ]);
-
-        // On notifie l'admin en utilisant le système dynamique
-        $adminEmail = config('settings.admin_notification_email');
-        $template = NotificationTemplate::where('key', 'admin.new_partner_request')->first();
-        if ($adminEmail && $template && $template->is_active && config('settings.mail_notifications_active')) {
-            Notifier::route('mail', $adminEmail)->notify(new NewPartnerRequestNotification($client));
+        // Notifier l'administrateur
+        $admin = User::first(); // Assurez-vous qu'un admin existe
+        if ($admin) {
+            $admin->notify(new NewPartnerRequestNotification($application));
         }
-
-        $this->applicationSubmitted = true;
+        
+        session()->flash('success', 'Merci ! Votre demande a bien été envoyée. Nous vous contacterons prochainement.');
+        $this->reset();
     }
 
     public function render()

@@ -12,12 +12,12 @@ class Post extends Model
 
     protected $fillable = [
         'category_id',
-        'titre',
+        'title', 
         'slug',
-        'contenu',
+        'content', 
         'image',
-        'date_publication',
-        'is_published',
+        'published_at', 
+        'status', 
         'meta_titre',
         'meta_description',
     ];
@@ -25,8 +25,8 @@ class Post extends Model
     protected function casts(): array
     {
         return [
-            'date_publication' => 'date',
-            'is_published' => 'boolean',
+            'published_at' => 'datetime', 
+            'status' => 'string',
         ];
     }
 
