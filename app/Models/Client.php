@@ -3,41 +3,59 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 
-class Client extends Model
+class Client extends Authenticatable
 {
-    use HasFactory;
+    use HasFactory, Notifiable;
 
     protected $fillable = [
-        'nom', 'type', 'telephone', 'email', 'identifiant_unique_somacif', 'password','entrepots_de_livraison',
+        'nom', 'email', 'password', 'telephone', 'type', 
+        'identifiant_unique_somacif', 'statut',
+        // Champs pour l'authentification sans mot de passe
+        'verification_code', 'verification_code_expires_at',
     ];
 
-    protected $hidden = [ 'password', 'remember_token' ];
+    protected $hidden = ['password', 'remember_token', 'verification_code'];
 
-    // CORRECTION : Un client a PLUSIEURS points de vente
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+        'password' => 'hashed',
+        'verification_code_expires_at' => 'datetime',
+    ];
+
+    /**
+     * Un client peut avoir plusieurs points de vente.
+     * C'est la relation la plus importante pour la distribution.
+     */
     public function pointsDeVente(): HasMany
     {
         return $this->hasMany(PointDeVente::class, 'responsable_id');
     }
 
-    // Un client a un inventaire via TOUS ses points de vente
-    public function inventory(): HasMany
+    /**
+     * Un client peut passer plusieurs commandes.
+     */
+    public function orders(): HasMany
     {
-        // On récupère les IDs de tous les points de vente de ce client
-        $pointDeVenteIds = $this->pointsDeVente()->pluck('id');
-        
-        // On retourne toutes les lignes d'inventaire de ces points de vente
-        return (new Inventory)->whereIn('point_de_vente_id', $pointDeVenteIds);
+        return $this->hasMany(Order::class);
     }
 
+    /**
+     * Un client peut effectuer plusieurs règlements.
+     */
     public function reglements(): HasMany
     {
         return $this->hasMany(Reglement::class);
     }
-    public function orders(): HasMany
+    /**
+     * 
+     */
+    public function generateVerificationCode(): void
     {
-        return $this->hasMany(Order::class);
+        $this->verification_code = random_int(100000, 999999);
+        $this->verification_code_expires_at = now()->addMinutes(10);
+        $this->save();
     }
 }

@@ -3,59 +3,47 @@
 namespace App\Observers;
 
 use App\Models\Order;
-use App\Models\Inventory;
-use App\Models\UniteDeVente;
+use App\Services\StockManager;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 class OrderObserver
 {
+    protected StockManager $stockManager;
+
+    public function __construct(StockManager $stockManager)
+    {
+        $this->stockManager = $stockManager;
+    }
+
     public function updated(Order $order): void
     {
-        if ($order->is_vente_directe) {
-            return;
+        if ($order->isDirty('statut') && $order->statut === 'validee') {
+            $this->handleStockForValidatedOrder($order);
         }
+    }
 
-        $originalStatus = $order->getOriginal('statut');
-        $newStatus = $order->statut;
+    public function created(Order $order): void
+    {
+        if ($order->statut === 'validee') {
+            $this->handleStockForValidatedOrder($order);
+        }
+    }
 
-        DB::transaction(function () use ($order, $originalStatus, $newStatus) {
-            if ($newStatus === 'validee' && $originalStatus !== 'validee') {
-                foreach ($order->items as $item) {
-                    $uniteDeVente = UniteDeVente::find($item->unite_de_vente_id);
-                    if ($uniteDeVente) {
-                        if ($uniteDeVente->stock < $item->quantite) {
-                            Log::warning("Stock insuffisant pour unité de vente ID {$item->unite_de_vente_id} pour la commande ID {$order->id}");
-                            continue; // Ou lever exception selon besoin
-                        }
-                        $uniteDeVente->decrement('stock', $item->quantite);
-                    }
+    private function handleStockForValidatedOrder(Order $order): void
+    {
+        DB::transaction(function () use ($order) {
+            $order->load('items.uniteDeVente', 'pointDeVente');
 
-                    $inventory = Inventory::firstOrCreate(
-                        [
-                            'point_de_vente_id' => $order->point_de_vente_id,
-                            'unite_de_vente_id' => $item->unite_de_vente_id
-                        ]
-                    );
-                    $inventory->increment('quantite_stock', $item->quantite);
-                }
+            // La condition a disparu ! On part du principe qu'il y a TOUJOURS un point de vente.
+            if (!$order->pointDeVente) {
+                throw new \Exception("Une commande validée doit être associée à un point de vente.");
             }
 
-            if ($newStatus === 'annulee' && $originalStatus === 'validee') {
-                foreach ($order->items as $item) {
-                    $uniteDeVente = UniteDeVente::find($item->unite_de_vente_id);
-                    if ($uniteDeVente) {
-                        $uniteDeVente->increment('stock', $item->quantite);
-                    }
-
-                    $inventory = Inventory::where('point_de_vente_id', $order->point_de_vente_id)
-                        ->where('unite_de_vente_id', $item->unite_de_vente_id)
-                        ->first();
-
-                    if ($inventory) {
-                        $inventory->decrement('quantite_stock', $item->quantite);
-                    }
-                }
+            foreach ($order->items as $item) {
+                // Diminue le stock principal
+                $this->stockManager->decreaseMainStock($item->uniteDeVente, $item->quantite);
+                // Augmente TOUJOURS le stock du point de vente
+                $this->stockManager->increasePointDeVenteStock($order->pointDeVente, $item->uniteDeVente, $item->quantite);
             }
         });
     }

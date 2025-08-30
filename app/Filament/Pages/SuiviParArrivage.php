@@ -4,7 +4,6 @@ namespace App\Filament\Pages;
 
 use App\Models\Arrivage;
 use App\Models\Inventory;
-use App\Models\OrderItem;
 use App\Models\Reglement;
 use App\Models\UniteDeVente;
 use Filament\Forms\Components\Select;
@@ -12,16 +11,18 @@ use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Pages\Page;
+use Illuminate\Database\Eloquent\Builder;
 
 class SuiviParArrivage extends Page implements HasForms
 {
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-chart-bar';
-    protected static ?string $navigationGroup = 'Gestion des Stocks';
+    protected static ?string $navigationGroup = 'Gestion de Stock';
     protected static ?string $navigationLabel = 'Suivi par Arrivage';
     protected static ?int $navigationSort = 2;
     protected static string $view = 'filament.pages.suivi-par-arrivage';
+
     public ?int $selectedArrivageId = null;
 
     public function form(Form $form): Form
@@ -37,6 +38,9 @@ class SuiviParArrivage extends Page implements HasForms
             ]);
     }
 
+    /**
+     * AMÉLIORATION : La logique de calcul est entièrement revue pour être plus juste et performante.
+     */
     public function getSelectedArrivageData(): ?array
     {
         if (!$this->selectedArrivageId) {
@@ -44,35 +48,57 @@ class SuiviParArrivage extends Page implements HasForms
         }
 
         $arrivage = Arrivage::with('fournisseur')->find($this->selectedArrivageId);
-        $detailsProduits = $arrivage->details_produits;
+        if (!$arrivage || !is_array($arrivage->details_produits)) {
+            return null;
+        }
+
         $reportData = [];
-        $totalEncaisse = 0;
-        $uniteDeVenteIds = collect($detailsProduits)->pluck('unite_de_vente_id');
+        
+        // On récupère les IDs de toutes les unités de vente de cet arrivage
+        $uniteDeVenteIds = collect($arrivage->details_produits)->pluck('unite_de_vente_id')->unique()->toArray();
 
-        foreach ($detailsProduits as $detail) {
-            $uniteDeVenteId = $detail['unite_de_vente_id'];
-            $uniteDeVente = UniteDeVente::find($uniteDeVenteId);
-            if (!$uniteDeVente) continue;
+        // On pré-charge toutes les données nécessaires en quelques requêtes au lieu de boucler
+        $unitesDeVente = UniteDeVente::whereIn('id', $uniteDeVenteIds)->get()->keyBy('id');
+        $inventories = Inventory::whereIn('unite_de_vente_id', $uniteDeVenteIds)->get()->groupBy('unite_de_vente_id');
+        $ventesDetails = Reglement::whereHas('details', fn(Builder $q) => $q->whereIn('unite_de_vente_id', $uniteDeVenteIds))
+            ->with('details')
+            ->get()
+            ->flatMap->details
+            ->groupBy('unite_de_vente_id');
 
-            // Calcul précis des ventes via les règlements
-            $ventes = Reglement::whereHas('details', fn($q) => $q->where('unite_de_vente_id', $uniteDeVenteId))->with('details')->get();
-            $quantiteVendue = $ventes->flatMap->details->where('unite_de_vente_id', $uniteDeVenteId)->sum('quantite_vendue');
-            $montantVentes = $ventes->flatMap->details->where('unite_de_vente_id', $uniteDeVenteId)->sum(fn($d) => $d->quantite_vendue * $d->prix_de_vente_unitaire);
+        foreach ($arrivage->details_produits as $detail) {
+            $uniteId = $detail['unite_de_vente_id'];
+            $unite = $unitesDeVente->get($uniteId);
+            if (!$unite) continue;
 
-            // Calcul du stock restant chez TOUS les clients
-            $stockChezClients = Inventory::where('unite_de_vente_id', $uniteDeVenteId)->sum('quantite_stock');
+            // Quantité vendue pour cette unité de vente
+            $quantiteVendue = $ventesDetails->get($uniteId, collect())->sum('quantite_vendue');
             
-            $totalEncaisse += $montantVentes;
+            // Montant total des ventes pour cette unité
+            $montantVentes = $ventesDetails->get($uniteId, collect())->sum(fn($d) => $d->quantite_vendue * $d->prix_de_vente_unitaire);
+
+            // Stock restant chez TOUS les clients pour cette unité
+            $stockChezClients = $inventories->get($uniteId, collect())->sum('quantite_stock');
+            
+            // CORRECTION : On utilise 'quantite' et non 'quantite_cartons'
+            $quantiteRecue = $detail['quantite'] ?? 0;
+
+            // NOUVELLE LOGIQUE : On calcule le stock total actuel (Entrepôt + Clients)
+            $stockTotalActuel = $unite->stock + $stockChezClients;
 
             $reportData[] = [
-                'nom_produit' => $uniteDeVente->nom_unite . ' (' . $uniteDeVente->calibre . ')',
-                'quantite_recue' => $detail['quantite_cartons'],
-                'quantite_vendue' => $quantiteVendue,
-                'stock_chez_clients' => $stockChezClients,
-                'stock_entrepot' => $uniteDeVente->stock,
-                'montant_ventes' => $montantVentes,
+                'nom_produit' => $unite->nom_unite . ' (' . $unite->calibre . ')',
+                'quantite_recue_arrivage' => $quantiteRecue,
+                'quantite_vendue_total' => $quantiteVendue,
+                'stock_chez_clients_total' => $stockChezClients,
+                'stock_entrepot_actuel' => $unite->stock,
+                'stock_total_actuel' => $stockTotalActuel,
+                'montant_ventes_total' => $montantVentes,
             ];
         }
+        
+        // Calcul du total global encaissé pour cet ensemble de produits
+        $totalEncaisse = collect($reportData)->sum('montant_ventes_total');
 
         return [
             'arrivage' => $arrivage,
@@ -80,5 +106,4 @@ class SuiviParArrivage extends Page implements HasForms
             'totalEncaisse' => $totalEncaisse,
         ];
     }
-
 }

@@ -10,7 +10,11 @@ class Inventory extends Model
 {
     use HasFactory;
 
-    protected $table = 'inventory';
+    /**
+     *
+     * Cela lie définitivement ce modèle à la table 'inventories'.
+     */
+    protected $table = 'inventories';
 
     protected $fillable = [
         'point_de_vente_id',
@@ -18,22 +22,13 @@ class Inventory extends Model
         'quantite_stock',
     ];
 
-    protected $casts = [
-        'quantite_stock' => 'integer',
-    ];
-
     public function pointDeVente(): BelongsTo
     {
-        return $this->belongsTo(PointDeVente::class, 'point_de_vente_id');
+        return $this->belongsTo(PointDeVente::class);
     }
 
     public function uniteDeVente(): BelongsTo
     {
         return $this->belongsTo(UniteDeVente::class);
-    }
-
-    public function scopeOfPointDeVente($query, $pointDeVenteId)
-    {
-        return $query->where('point_de_vente_id', $pointDeVenteId);
     }
 }

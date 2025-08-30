@@ -4,27 +4,36 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\VenteDirecteResource\Pages;
 use App\Models\Order;
-use App\Models\PointDeVente;
 use App\Models\UniteDeVente;
-use Filament\Forms;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Actions\Action as FormAction;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Actions\Action as TableAction;
+use Filament\Tables\Columns\BadgeColumn;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
 
 class VenteDirecteResource extends Resource
 {
     protected static ?string $model = Order::class;
-    protected static ?string $navigationIcon = 'heroicon-o-shopping-bag';
-    protected static ?string $navigationGroup = 'Ventes';
-    protected static ?string $navigationLabel = 'Vente Directe';
-    protected static ?string $modelLabel = 'Vente Directe';
+    protected static ?string $slug = 'ventes-directes';
+    protected static ?string $navigationIcon = 'heroicon-o-bolt';
+    protected static ?string $navigationGroup = 'Ventes & Commandes';
+    protected static ?int $navigationSort = 3;
+    protected static ?string $label = 'Vente Directe';
+    protected static ?string $pluralLabel = 'Ventes Directes';
 
-    // On s'assure de ne voir que les ventes directes dans la liste
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->where('is_vente_directe', true);
@@ -34,77 +43,39 @@ class VenteDirecteResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Détails de la Vente')
-                    ->description('Enregistrez ici une vente rapide au comptoir.')
+                Section::make('Client & Vente')
                     ->schema([
-                        Forms\Components\Select::make('client_id')
-                            ->relationship('client', 'nom')
-                            ->label('Client')
-                            ->searchable()
-                            ->required()
-                            ->helperText('Sélectionnez le client qui achète le produit. Il peut être un client de passage ou un partenaire.'),
-                        Forms\Components\Select::make('point_de_vente_id')
-                            ->label('Stock Utilisé (Point de Vente)')
-                            ->options(PointDeVente::all()->pluck('nom', 'id'))
-                            ->live() // Indispensable pour filtrer les produits
-                            ->required()
-                            ->helperText('Sélectionnez le point de vente d\'où le stock est physiquement retiré.'),
+                        Select::make('client_id')
+                            ->relationship('client', 'nom', fn (Builder $query) => $query->whereNotNull('nom'))
+                            ->searchable()->preload()->label('Client (Facultatif)'),
+                        DatePicker::make('date_vente')->label('Date de la vente')->default(now())->required(),
                     ])->columns(2),
-
-                Forms\Components\Section::make('Articles Vendus')
+                Section::make('Articles Vendus')
                     ->schema([
-                        Forms\Components\Repeater::make('items')
+                        Repeater::make('items')
                             ->relationship()
                             ->schema([
-                                Forms\Components\Select::make('unite_de_vente_id')
-                                    ->label('Produit Vendu')
-                                    ->options(function (Get $get): Collection {
-                                        // La liste des produits dépend maintenant du POINT DE VENTE sélectionné, et non du client.
-                                        $pointDeVenteId = $get('../../point_de_vente_id');
-                                        if (!$pointDeVenteId) { return collect(); }
-
-                                        $uniteDeVenteIds = \App\Models\Inventory::where('point_de_vente_id', $pointDeVenteId)
-                                            ->where('quantite_stock', '>', 0)
-                                            ->pluck('unite_de_vente_id');
-                                        
-                                        return UniteDeVente::whereIn('id', $uniteDeVenteIds)
-                                            ->get()
-                                            ->mapWithKeys(fn ($unite) => [$unite->id => $unite->nom_complet]);
-                                    })
-                                    ->searchable()->required()->reactive()
-                                    ->afterStateUpdated(fn ($state, Set $set) => $set('prix_unitaire', UniteDeVente::find($state)?->prix_unitaire)),
-                                Forms\Components\TextInput::make('quantite')
-                                    ->numeric()->required()->live(onBlur: true),
-                                Forms\Components\TextInput::make('prix_unitaire')
-                                    ->numeric()->required()->live(onBlur: true),
+                                Select::make('unite_de_vente_id')
+                                    ->relationship('uniteDeVente', 'nom_unite', fn (Builder $query) => $query->whereNotNull('nom_unite'))
+                                    ->searchable()->preload()->required()->live()
+                                    ->afterStateUpdated(fn (Set $set, $state) => $set('prix_unitaire', UniteDeVente::find($state)?->prix_unitaire ?? 0))
+                                    ->label('Produit'),
+                                TextInput::make('quantite')->numeric()->required()->live(onBlur: true)->default(1),
+                                TextInput::make('prix_unitaire')->numeric()->required()->live(onBlur: true),
+                                Placeholder::make('prix_total_ligne')->label('Total Ligne')
+                                    ->content(fn (Get $get): string => number_format(($get('quantite') ?? 0) * ($get('prix_unitaire') ?? 0), 0, ',', ' ') . ' FCFA'),
                             ])
-                            ->afterStateUpdated(function (Get $get, Set $set) {
-                                $total = 0;
-                                foreach ($get('items') as $item) {
-                                    if(!empty($item['quantite']) && !empty($item['prix_unitaire'])) {
-                                        $total += $item['quantite'] * $item['prix_unitaire'];
-                                    }
-                                }
-                                $set('montant_total', $total);
-                                $set('montant_paye', $total); // Pour une vente directe, le montant payé est le total
-                            })
-                            ->addActionLabel('Ajouter un produit')->columns(3),
+                            ->columns(4)->addActionLabel('Ajouter un article')->collapsible()->reorderable(false)->live()
+                            ->afterStateUpdated(fn (Get $get, Set $set) => self::updateTotals($get, $set))
+                            ->deleteAction(fn (FormAction $action) => $action->after(fn (Get $get, Set $set) => self::updateTotals($get, $set))),
                     ]),
-                
-                Forms\Components\Section::make('Finalisation')
+                Section::make('Paiement & Résumé')
                     ->schema([
-                        Forms\Components\TextInput::make('montant_total')->label('Montant Total')->readOnly()->prefix('CFA'),
-                        // Le champ de notes que tu as demandé
-                        Forms\Components\Textarea::make('notes')
-                            ->label('Notes (optionnel)')
-                    ]),
-
-                // Champs cachés pour automatiser l'enregistrement
-                Forms\Components\Hidden::make('is_vente_directe')->default(true),
-                Forms\Components\Hidden::make('statut')->default('Livrée'),
-                Forms\Components\Hidden::make('statut_paiement')->default('Complètement réglé'),
-                Forms\Components\Hidden::make('numero_commande')->default('VD-' . strtoupper(uniqid())),
-                Forms\Components\Hidden::make('montant_paye')->default(0),
+                        Select::make('methode_paiement')->options(['especes' => 'Espèces', 'cheque' => 'Chèque', 'virement' => 'Virement', 'mobile' => 'Mobile Money'])
+                            ->required()->label('Méthode de Paiement'),
+                        TextInput::make('montant_total')->numeric()->readOnly()->prefix('FCFA')->label('Montant Total à Payer'),
+                        Textarea::make('notes')->columnSpanFull(),
+                    ])->columns(2),
             ]);
     }
 
@@ -112,12 +83,36 @@ class VenteDirecteResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('created_at')->label('Date Vente')->dateTime('d/m/Y')->sortable(),
-                Tables\Columns\TextColumn::make('client.nom')->searchable(),
-                Tables\Columns\TextColumn::make('pointDeVente.nom')->label('Stock utilisé'),
-                Tables\Columns\TextColumn::make('montant_total')->money('cfa'),
+                TextColumn::make('numero_commande')->searchable()->sortable(),
+                TextColumn::make('client.nom')->searchable()->sortable()->default('Client de Passage'),
+                BadgeColumn::make('statut')->colors(['success' => 'livree', 'danger' => 'annulee']),
+                BadgeColumn::make('statut_paiement')->colors(['success' => 'Complètement réglé', 'danger' => 'Annulé']),
+                TextColumn::make('montant_total')->money('XOF')->sortable(),
+                TextColumn::make('created_at')->dateTime('d/m/Y')->label('Date')->sortable(),
             ])
-            ->defaultSort('created_at', 'desc');
+            ->defaultSort('created_at', 'desc')
+            ->actions([
+                Tables\Actions\ViewAction::make(),
+                // NOUVEAU BOUTON : Pour annuler la vente.
+                TableAction::make('annuler')
+                    ->label('Annuler')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Annuler cette vente ?')
+                    ->modalDescription('Cette action remettra les produits dans le stock principal. Cette opération est irréversible.')
+                    ->action(function (Order $record) {
+                        $record->annulerVente();
+                    })
+                    // Le bouton disparaît si la vente est déjà annulée.
+                    ->hidden(fn (Order $record): bool => $record->statut === 'annulee'),
+            ]);
+    }
+
+    public static function updateTotals(Get $get, Set $set): void
+    {
+        $total = collect($get('items'))->sum(fn($item) => ($item['quantite'] ?? 0) * ($item['prix_unitaire'] ?? 0));
+        $set('montant_total', $total);
     }
     
     public static function getPages(): array

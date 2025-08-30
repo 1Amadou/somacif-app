@@ -1,20 +1,40 @@
 <?php
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Livreur extends Authenticatable
 {
     use HasFactory, Notifiable;
 
-    protected $fillable = ['name', 'phone', 'password'];
-    protected $hidden = ['password', 'remember_token'];
+    protected $fillable = [
+        'nom', 'prenom', 'telephone', 'email', 'password',
+        // Champs pour l'authentification sans mot de passe
+        'verification_code', 'verification_code_expires_at',
+    ];
 
-    public function orders(): HasMany
+    protected $hidden = ['password', 'remember_token', 'verification_code'];
+    
+    protected $casts = [
+        'password' => 'hashed',
+        'verification_code_expires_at' => 'datetime',
+    ];
+    
+    public function getFullNameAttribute(): string
     {
-        return $this->hasMany(Order::class);
+        return "{$this->prenom} {$this->nom}";
+    }
+
+    /**
+     * LOGIQUE : Génère un code de vérification à 6 chiffres.
+     */
+    public function generateVerificationCode(): void
+    {
+        $this->verification_code = random_int(100000, 999999);
+        $this->verification_code_expires_at = now()->addMinutes(10);
+        $this->save();
     }
 }

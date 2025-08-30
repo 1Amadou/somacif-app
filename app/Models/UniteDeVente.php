@@ -22,14 +22,18 @@ class UniteDeVente extends Model
         'prix_particulier',
     ];
 
-    // Je vous recommande de ne pas utiliser la propriété $with,
-    // car elle peut impacter les performances de manière imprévue.
-    // Il est préférable de charger les relations manuellement avec `with()` ou `load()`.
-    // protected $with = ['product']; 
-
+    /**
+     * CORRECTION DÉFINITIVE DE ROBUSTESSE :
+     * Construit un nom complet et lisible qui ne plantera JAMAIS,
+     * même si le produit parent n'existe plus dans la base de données.
+     */
     public function getNomCompletAttribute(): string
     {
-        return "{$this->product->nom} - {$this->calibre} ({$this->nom_unite})";
+        // Utilise l'opérateur "null coalescing" pour fournir une valeur par défaut
+        // si la relation 'product' ou son nom est null.
+        $productName = $this->product->nom ?? '[PRODUIT MANQUANT]';
+
+        return "{$productName} - {$this->calibre} ({$this->nom_unite})";
     }
 
     public function product(): BelongsTo
@@ -42,16 +46,16 @@ class UniteDeVente extends Model
         return $this->hasMany(OrderItem::class);
     }
     
-    // Ajout des relations manquantes pour le suivi
-    // On suppose que les stocks clients sont dans une table `inventories`
     public function inventories(): HasMany
     {
         return $this->hasMany(Inventory::class, 'unite_de_vente_id');
     }
 
-    // On suppose que les détails des ventes sont dans une table `reglement_items`
-    public function reglementItems(): HasMany
+    /**
+     * Correction de la relation pour pointer vers le bon modèle DetailReglement.
+     */
+    public function detailReglements(): HasMany
     {
-        return $this->hasMany(ReglementItem::class, 'unite_de_vente_id');
+        return $this->hasMany(DetailReglement::class, 'unite_de_vente_id');
     }
 }

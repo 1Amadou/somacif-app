@@ -14,9 +14,9 @@ class Arrivage extends Model
         'date_arrivage',
         'fournisseur_id',
         'numero_bon_livraison',
-        'details_produits',
+        'details_produits', // Le JSON contenant les produits reçus
         'notes',
-        'user_id',
+        'user_id',          // Qui a enregistré l'arrivage
         'decharge_signee_path',
     ];
 
@@ -25,12 +25,17 @@ class Arrivage extends Model
         'details_produits' => 'array',
     ];
 
+    /**
+     * L'utilisateur (employé) qui a créé l'enregistrement.
+     */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
-
     
+    /**
+     * Le fournisseur qui a livré la marchandise.
+     */
     public function fournisseur(): BelongsTo
     {
         return $this->belongsTo(Fournisseur::class);

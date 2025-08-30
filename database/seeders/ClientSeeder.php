@@ -2,51 +2,57 @@
 
 namespace Database\Seeders;
 
-use App\Models\Client;
+use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use App\Models\Client;
+use App\Models\PointDeVente;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 
 class ClientSeeder extends Seeder
 {
     /**
      * Run the database seeds.
-     *
-     * @return void
      */
-    public function run()
+    public function run(): void
     {
-        // Création d'un client de type Grossiste
-        Client::create([
-            'identifiant_unique_somacif' => 'CLI-GROS-DIARRA',
-            'nom' => 'Grossiste Amadou Diarra',
-            'type' => 'Grossiste',
-            'telephone' => '76102030',
-            'email' => 'diarra.gros@example.com',
-            // CORRECTION : On transforme le tableau en chaîne JSON
-            'entrepots_de_livraison' => json_encode(['Dakar - Port', 'Bamako - Sogoniko']),
-            'password' => Hash::make('password'),
-        ]);
+        Schema::disableForeignKeyConstraints();
+        PointDeVente::truncate();
+        Client::truncate();
+        Schema::enableForeignKeyConstraints();
 
-        // Création d'un client de type Hôtel/Restaurant
-        Client::create([
-            'identifiant_unique_somacif' => 'CLI-HOTEL-AZALAI',
-            'nom' => 'Hôtel Azalaï Bamako',
+        // --- CLIENT 1 : Hôtel ---
+        $hotelAzalai = Client::create([
+            'nom' => 'Hôtel Azalaï',
             'type' => 'Hôtel/Restaurant',
-            'telephone' => '20221111',
-            'email' => 'azalai@example.com',
-            'entrepots_de_livraison' => json_encode(['Bamako - ACI 2000']),
+            'telephone' => '+223 20 22 80 44',
+            'email' => 'reception.bamako@azalaihotels.com',
             'password' => Hash::make('password'),
+            'identifiant_unique_somacif' => 'SOM-CLI-001', // <-- CORRECTION ICI
         ]);
 
-        // Création d'un client de type Particulier
-        Client::create([
-            'identifiant_unique_somacif' => 'CLI-PART-COULIBALY',
-            'nom' => 'Moussa Coulibaly',
-            'type' => 'Particulier',
-            'telephone' => '66708090',
-            'email' => 'moussa.part@example.com',
-            'entrepots_de_livraison' => json_encode(['Bamako Particulier - ACI 2000']),
+        PointDeVente::create([
+            'responsable_id' => $hotelAzalai->id,
+            'nom' => 'Azalaï Dépôt Principal',
+            'adresse' => 'ACI 2000, Bamako',
+            'telephone' => '+223 20 22 80 44',
+        ]);
+        
+        // --- CLIENT 2 : Grossiste ---
+        $grossisteSogoniko = Client::create([
+            'nom' => 'Supermarché Sogoniko',
+            'type' => 'Grossiste',
+            'telephone' => '+223 76 10 20 30',
+            'email' => 'achats@sogoniko.ml',
             'password' => Hash::make('password'),
+            'identifiant_unique_somacif' => 'SOM-CLI-002', // <-- CORRECTION ICI
+        ]);
+
+        PointDeVente::create([
+            'responsable_id' => $grossisteSogoniko->id,
+            'nom' => 'Dépôt Central Sogoniko',
+            'adresse' => 'Marché Sogoniko, Bamako',
+            'telephone' => '+223 76 10 20 30',
         ]);
     }
 }

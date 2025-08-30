@@ -1,67 +1,77 @@
 <x-filament-panels::page>
+    <div class="space-y-6">
+        {{-- Le formulaire de sélection de l'arrivage --}}
+        <div class="p-4 bg-white rounded-lg shadow dark:bg-gray-800">
+            {{ $this->form }}
+        </div>
 
-    <form wire:submit.prevent>
-        {{ $this->form }}
-    </form>
-
-    @php
-        $data = $this->getSelectedArrivageData();
-    @endphp
-
-    @if ($data)
-        <div class="mt-6 space-y-6 rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-800 dark:ring-white/10">
-
-            <div class="flex justify-between items-center">
-                <div>
-                    <h2 class="text-xl font-bold">
-                        Rapport pour l'arrivage N° {{ $data['arrivage']->numero_bon_livraison }}
+        {{-- Le conteneur pour le rapport, qui s'affiche seulement si un arrivage est sélectionné --}}
+        @if ($this->selectedArrivageId && ($data = $this->getSelectedArrivageData()))
+            <div class="space-y-6">
+                {{-- Section Résumé de l'Arrivage --}}
+                <div class="p-6 bg-white rounded-lg shadow dark:bg-gray-800">
+                    <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+                        Rapport pour l'arrivage : {{ $data['arrivage']->numero_bon_livraison }}
                     </h2>
-                    <p class="text-sm text-gray-500">
-                        Date: {{ $data['arrivage']->date_arrivage->format('d/m/Y') }} | 
-                        Fournisseur: {{ $data['arrivage']->fournisseur->nom_entreprise }}
-                    </p>
+                    <dl class="mt-4 grid grid-cols-1 gap-x-4 gap-y-8 sm:grid-cols-3">
+                        <div class="sm:col-span-1">
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Fournisseur</dt>
+                            <dd class="mt-1 text-lg text-gray-900 dark:text-white">{{ $data['arrivage']->fournisseur->nom_entreprise }}</dd>
+                        </div>
+                        <div class="sm:col-span-1">
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Date de réception</dt>
+                            <dd class="mt-1 text-lg text-gray-900 dark:text-white">{{ $data['arrivage']->date_arrivage->format('d/m/Y') }}</dd>
+                        </div>
+                        <div class="sm:col-span-1">
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Total Encaissé (pour ces produits)</dt>
+                            <dd class="mt-1 text-2xl font-semibold text-primary-600 dark:text-primary-500">
+                                {{ number_format($data['totalEncaisse'], 0, ',', ' ') }} FCFA
+                            </dd>
+                        </div>
+                    </dl>
                 </div>
-                <div class="text-right">
-                    <p class="text-lg font-semibold">Montant Total Encaissé</p>
-                    <p class="text-2xl font-bold text-primary-600">
-                        {{ number_format($data['totalEncaisse'], 0, ',', ' ') }} CFA
-                    </p>
+
+                {{-- Tableau détaillé des produits --}}
+                <div class="overflow-x-auto bg-white rounded-lg shadow dark:bg-gray-800">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead class="bg-gray-50 dark:bg-gray-700">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Produit</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Reçu (cet arrivage)</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Vendu (total)</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Stock Entrepôt (actuel)</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Stock Clients (actuel)</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Stock Total (actuel)</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-300">Montant Ventes (total)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                            @forelse ($data['reportData'] as $item)
+                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-600">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{{ $item['nom_produit'] }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm text-blue-600 font-semibold dark:text-blue-400">{{ $item['quantite_recue_arrivage'] }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm text-green-600 font-semibold dark:text-green-400">{{ $item['quantite_vendue_total'] }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-500 dark:text-gray-300">{{ $item['stock_entrepot_actuel'] }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-500 dark:text-gray-300">{{ $item['stock_chez_clients_total'] }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-900 font-bold dark:text-white">{{ $item['stock_total_actuel'] }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm text-primary-600 font-bold dark:text-primary-500">{{ number_format($item['montant_ventes_total'], 0, ',', ' ') }} FCFA</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                                        Aucun produit trouvé pour cet arrivage.
+                                    </td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
                 </div>
             </div>
-
-            <div class="border-t border-gray-200 dark:border-white/10 pt-6">
-                <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-                <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
-                    <tr>
-                        <th scope="col" class="px-6 py-3">Produit</th>
-                        <th scope="col" class="px-6 py-3 text-center">Qté Reçue</th>
-                        <th scope="col" class="px-6 py-3 text-center">Qté Vendue</th>
-                        <th scope="col" class="px-6 py-3 text-center">Stock (Clients)</th>
-                        <th scope="col" class="px-6 py-3 text-center">Stock (Entrepôt)</th>
-                        <th scope="col" class="px-6 py-3 text-right">Montant Ventes</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse ($data['reportData'] as $row)
-                        <tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
-                            <td class="px-6 py-4 font-medium">{{ $row['nom_produit'] }}</td>
-                            <td class="px-6 py-4 text-center font-bold">{{ $row['quantite_recue'] }}</td>
-                            <td class="px-6 py-4 text-center text-green-600">{{ $row['quantite_vendue'] }}</td>
-                            <td class="px-6 py-4 text-center text-blue-600">{{ $row['stock_chez_clients'] }}</td>
-                            <td class="px-6 py-4 text-center text-orange-600">{{ $row['stock_entrepot'] }}</td>
-                            <td class="px-6 py-4 text-right font-semibold">{{ number_format($row['montant_ventes'], 0, ',', ' ') }} CFA</td>
-                        </tr>
-                    @empty
-                        @endforelse
-                </tbody>
-                </table>
+        @else
+            {{-- Message qui s'affiche si aucun arrivage n'est sélectionné --}}
+            <div class="p-6 text-center bg-white rounded-lg shadow dark:bg-gray-800">
+                <p class="text-gray-500 dark:text-gray-400">Veuillez sélectionner un arrivage pour afficher son rapport de suivi.</p>
             </div>
-
-        </div>
-    @else
-        <div class="mt-6 text-center text-gray-500">
-            <p>Veuillez sélectionner un arrivage pour afficher le rapport de suivi.</p>
-        </div>
-    @endif
-
+        @endif
+    </div>
 </x-filament-panels::page>

@@ -4,143 +4,144 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ReglementResource\Pages;
 use App\Models\Client;
+use App\Models\Order;
 use App\Models\Reglement;
 use App\Models\UniteDeVente;
 use Filament\Forms;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
 use Filament\Resources\Resource;
-use Filament\Tables\Table;
 use Filament\Tables;
-use Illuminate\Support\Facades\Auth;
+use Filament\Tables\Columns\BadgeColumn;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 class ReglementResource extends Resource
 {
     protected static ?string $model = Reglement::class;
-    protected static ?string $navigationIcon = 'heroicon-o-calculator';
-    protected static ?string $navigationGroup = 'Ventes';
-    protected static ?string $navigationLabel = 'Règlements Clients';
+
+    protected static ?string $navigationIcon = 'heroicon-o-banknotes';
+    protected static ?string $navigationGroup = 'Ventes & Commandes';
+    protected static ?int $navigationSort = 2;
+    protected static ?string $label = 'Règlement Client';
+    protected static ?string $pluralLabel = 'Règlements Clients';
+
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Wizard::make([
-                    Forms\Components\Wizard\Step::make('Client et Commandes')
-                        ->description('Sélectionnez le client et les commandes concernées.')
-                        ->schema([
-                            Forms\Components\Select::make('client_id')
-                                ->relationship('client', 'nom')
-                                ->label('Client / Distributeur')
-                                ->searchable()
-                                ->preload()
-                                ->live()
-                                ->required()
-                                ->afterStateUpdated(fn (Set $set) => $set('orders', [])),
+                Section::make('Informations du Règlement')
+                    ->schema([
+                        Select::make('client_id')
+                            ->relationship('client', 'nom', fn (Builder $query) => $query->whereNotNull('nom'))
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->live() // Indispensable pour filtrer les commandes
+                            ->afterStateUpdated(function (Set $set) {
+                                // Réinitialise les champs dépendants
+                                $set('orders', []);
+                                $set('montant_calcule', 0);
+                            })
+                            ->label('Client'),
 
-                            Forms\Components\CheckboxList::make('orders')
-                                ->relationship()
-                                ->label('Commandes à Régler')
-                                ->helperText('Sélectionnez les commandes impayées que ce règlement couvre.')
-                                ->options(function (Get $get): array {
-                                    $client = Client::find($get('client_id'));
-                                    if (!$client) return [];
-                                    return $client->orders()
-                                        ->where('statut_paiement', '!=', 'Complètement réglé')
-                                        ->pluck('numero_commande', 'id')
-                                        ->toArray();
-                                })
-                                ->live()
-                                ->columns(3)
-                                ->required()
-                                ->validationMessages([
-                                    'required' => 'Une ou plusieurs commandes doivent être sélectionnées.',
-                                ]),
-                        ]),
+                        DatePicker::make('date_reglement')
+                            ->required()
+                            ->default(now())
+                            ->label('Date du règlement'),
 
-                    Forms\Components\Wizard\Step::make('Détail des Ventes')
-                        ->description('Déclarez les produits vendus, avec quantités et prix.')
-                        ->schema([
-                            Forms\Components\Repeater::make('details')
-                                ->relationship()
-                                ->label('Ventes déclarées')
-                                ->minItems(1)
-                                ->schema([
-                                    Forms\Components\Select::make('unite_de_vente_id')
-                                        ->label('Produit Vendu')
-                                        ->options(function (Get $get): array {
-                                            $orderIds = $get('../../orders') ?? [];
-                                            if (empty($orderIds)) return [];
-                                            return UniteDeVente::whereHas('orderItems.order', fn ($q) => $q->whereIn('id', $orderIds))
-                                                ->get()
-                                                ->mapWithKeys(fn ($u) => [$u->id => $u->nom_complet])
-                                                ->toArray();
-                                        })
-                                        ->required()
-                                        ->distinct(false)
-                                        ->disableOptionsWhenSelectedInSiblingRepeaterItems(false),
+                        TextInput::make('montant_verse')
+                            ->numeric()
+                            ->required()
+                            ->prefix('FCFA')
+                            ->label('Montant Versé'),
+                        
+                        // CHAMP CALCULE : Montant total des commandes sélectionnées
+                        TextInput::make('montant_calcule')
+                            ->numeric()
+                            ->readOnly()
+                            ->prefix('FCFA')
+                            ->label('Montant Calculé (dû)'),
 
-                                    Forms\Components\TextInput::make('quantite_vendue')
-                                        ->label('Quantité Vendue')
-                                        ->numeric()
-                                        ->required()
-                                        ->minValue(1)
-                                        ->live(onBlur: true),
+                        Select::make('methode_paiement')
+                            ->options([
+                                'especes' => 'Espèces',
+                                'cheque' => 'Chèque',
+                                'virement' => 'Virement bancaire',
+                                'mobile' => 'Mobile Money',
+                            ])
+                            ->required()
+                            ->label('Méthode de Paiement'),
 
-                                    Forms\Components\TextInput::make('prix_de_vente_unitaire')
-                                        ->label('Prix de Vente Unitaire')
-                                        ->numeric()
-                                        ->required()
-                                        ->minValue(0)
-                                        ->live(onBlur: true),
-                                ])
-                                ->addActionLabel('Ajouter une ligne de vente')
-                                ->columns(3)
-                                ->live()
-                                ->afterStateUpdated(function (Get $get, Set $set) {
-                                    self::updateTotals($get, $set);
-                                }),
-                        ]),
+                        Textarea::make('notes')
+                            ->columnSpanFull(),
+                    ])->columns(2),
+                
+                Section::make('Commandes Associées')
+                    ->description('Sélectionnez les commandes que ce règlement concerne.')
+                    ->collapsible()
+                    ->schema([
+                        // FORMULAIRE INTELLIGENT : Ne montre que les commandes non réglées du client.
+                        Select::make('orders')
+                            ->label('Commandes à Régler')
+                            ->multiple()
+                            ->relationship('orders', 'numero_commande')
+                            ->options(function (Get $get): Collection {
+                                $clientId = $get('client_id');
+                                if (!$clientId) {
+                                    return collect();
+                                }
+                                return Order::query()
+                                    ->where('client_id', $clientId)
+                                    ->whereIn('statut_paiement', ['non_payee', 'Partiellement réglé'])
+                                    ->pluck('numero_commande', 'id');
+                            })
+                            ->preload()
+                            ->live()
+                            // Met à jour le montant calculé automatiquement
+                            ->afterStateUpdated(function (Get $get, Set $set, $state) {
+                                $total = Order::whereIn('id', $state)->sum('montant_total');
+                                $set('montant_calcule', $total);
+                            }),
+                    ]),
 
-                    Forms\Components\Wizard\Step::make('Versement et Validation')
-                        ->description('Entrez le montant versé par le client et finalisez.')
-                        ->schema([
-                            Forms\Components\DatePicker::make('date_reglement')
-                                ->label('Date du règlement')
-                                ->required()
-                                ->default(now()),
-
-                            Forms\Components\TextInput::make('montant_verse')
-                                ->label('Montant Versé par le client')
-                                ->required()
-                                ->numeric()
-                                ->prefix('CFA')
-                                ->minValue(0)
-                                ->rule(function (Get $get) {
-                                    return function ($attribute, $value, $fail) use ($get) {
-                                        $totalVentes = $get('montant_calcule') ?? 0;
-                                        if ($value != $totalVentes) {
-                                            $fail("Le montant versé doit être exactement égal au total des ventes déclarées ({$totalVentes} CFA).");
-                                        }
-                                    };
-                                })
-                                ->live(onBlur: true),
-
-                            Forms\Components\TextInput::make('montant_calcule')
-                                ->label('Total des ventes déclarées')
-                                ->numeric()
-                                ->readOnly()
-                                ->prefix('CFA'),
-
-                            Forms\Components\Textarea::make('notes')
-                                ->label('Notes / Commentaires')
-                                ->columnSpanFull(),
-                        ])->columns(2),
-
-                ])->columnSpanFull(),
-
-                Forms\Components\Hidden::make('user_id')->default(Auth::id()),
+                Section::make('Détails des Ventes (Déstockage)')
+                    ->description('Déclarez ici les articles vendus par le client pour déduire son inventaire.')
+                    ->collapsible()
+                    ->schema([
+                        Repeater::make('details')
+                            ->relationship()
+                            ->schema([
+                                Select::make('unite_de_vente_id')
+                                    ->relationship('uniteDeVente', 'nom_unite', fn (Builder $query) => $query->whereNotNull('nom_unite'))
+                                    ->searchable()->preload()->required()
+                                    ->live()
+                                    ->afterStateUpdated(function (Set $set, $state) {
+                                        $unite = UniteDeVente::find($state);
+                                        $set('prix_de_vente_unitaire', $unite?->prix_unitaire ?? 0);
+                                    })
+                                    ->label('Produit Vendu'),
+                                
+                                TextInput::make('quantite_vendue')
+                                    ->numeric()->required()->live(onBlur: true)->default(1)->label('Quantité Vendue'),
+                                
+                                TextInput::make('prix_de_vente_unitaire')
+                                    ->numeric()->required()->label('Prix Unitaire'),
+                            ])
+                            ->addActionLabel('Ajouter un article vendu')
+                            ->columns(3)
+                            ->reorderable(false),
+                    ]),
             ]);
     }
 
@@ -148,29 +149,38 @@ class ReglementResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('date_reglement')->date('d/m/Y')->sortable(),
-                Tables\Columns\TextColumn::make('client.nom')->label('Client')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('montant_verse')->money('cfa')->sortable()->label('Montant Versé'),
-                Tables\Columns\TextColumn::make('montant_calcule')->money('cfa')->sortable()->label('Montant Calculé'),
-                Tables\Columns\TextColumn::make('user.name')->label('Enregistré par'),
+                TextColumn::make('client.nom')->searchable()->sortable(),
+                TextColumn::make('date_reglement')->date('d/m/Y')->sortable(),
+                TextColumn::make('montant_verse')->money('XOF')->sortable(),
+                // CLARTE : Affiche les numéros de commande associés.
+                TextColumn::make('orders.numero_commande')
+                    ->badge()
+                    ->label('Commandes Réglées'),
+                TextColumn::make('methode_paiement')->searchable()->sortable(),
+                TextColumn::make('user.name')->label('Enregistré par')->sortable(),
             ])
             ->defaultSort('date_reglement', 'desc')
+            ->filters([
+                //
+            ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\Action::make('pdf')
-                    ->label('Imprimer')
-                    ->icon('heroicon-o-printer')
-                    ->url(fn (Reglement $record): string => route('reglement.pdf', $record))
-                    ->openUrlInNewTab(),
+                Tables\Actions\ViewAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
             ]);
     }
-
+    
     public static function getRelations(): array
     {
-        return [];
+        return [
+            //
+        ];
     }
-
+    
     public static function getPages(): array
     {
         return [
@@ -178,13 +188,5 @@ class ReglementResource extends Resource
             'create' => Pages\CreateReglement::route('/create'),
             'edit' => Pages\EditReglement::route('/{record}/edit'),
         ];
-    }
-
-    public static function updateTotals(Get $get, Set $set): void
-    {
-        $total = collect($get('details'))
-            ->filter(fn ($item) => !empty($item['quantite_vendue']) && !empty($item['prix_de_vente_unitaire']))
-            ->sum(fn ($item) => $item['quantite_vendue'] * $item['prix_de_vente_unitaire']);
-        $set('montant_calcule', $total);
-    }
+    }    
 }

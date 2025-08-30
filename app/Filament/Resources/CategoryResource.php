@@ -5,35 +5,50 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\CategoryResource\Pages;
 use App\Models\Category;
 use Filament\Forms;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Support\Str;
-use Filament\Forms\Set;
 
 class CategoryResource extends Resource
 {
     protected static ?string $model = Category::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-tag';
-    protected static ?string $navigationLabel = 'Catégories l\'actualités';
     protected static ?string $navigationGroup = 'Contenu & Site Web';
-    protected static ?int $navigationSort = 1;
+    protected static ?string $label = 'Catégorie';
+    protected static ?string $pluralLabel = 'Catégories d\'actualités';
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('nom')
-                    ->required()
-                    ->maxLength(255)
-                    ->live(onBlur: true)
-                    ->afterStateUpdated(fn (Set $set, ?string $state) => $set('slug', Str::slug($state))),
-                Forms\Components\TextInput::make('slug')
-                    ->required()
-                    ->maxLength(255)
-                    ->unique(Category::class, 'slug', ignoreRecord: true),
+                Section::make()
+                    ->schema([
+                        TextInput::make('name')
+                            ->label('Nom de la catégorie')
+                            ->required()
+                            ->maxLength(255)
+                            ->live(onBlur: true)
+                            // AMÉLIORATION : Génère automatiquement le slug à partir du nom.
+                            ->afterStateUpdated(fn (Set $set, ?string $state) => $set('slug', Str::slug($state))),
+
+                        TextInput::make('slug')
+                            ->label('Slug (URL)')
+                            ->required()
+                            ->maxLength(255)
+                            ->unique(ignoreRecord: true),
+                        
+                        // Vous pouvez décommenter ce champ si vous ajoutez une colonne 'description' à votre table.
+                        // Textarea::make('description')
+                        //     ->label('Description (optionnel)')
+                        //     ->columnSpanFull(),
+                    ])->columns(2),
             ]);
     }
 
@@ -41,11 +56,16 @@ class CategoryResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('nom')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('posts_count')->counts('posts')->label('Nombre d\'articles'),
-                Tables\Columns\TextColumn::make('updated_at')
-                    ->dateTime('d/m/Y')
+                TextColumn::make('name')
+                    ->label('Nom')
+                    ->searchable()
+                    ->sortable(),
+                TextColumn::make('slug')
+                    ->label('Slug'),
+                // AMÉLIORATION : Affiche le nombre d'articles dans chaque catégorie.
+                TextColumn::make('posts_count')
+                    ->counts('posts')
+                    ->label('Nombre d\'articles')
                     ->sortable(),
             ])
             ->filters([
@@ -53,7 +73,7 @@ class CategoryResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\ViewAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -61,14 +81,14 @@ class CategoryResource extends Resource
                 ]),
             ]);
     }
-
+    
     public static function getRelations(): array
     {
         return [
             //
         ];
     }
-
+    
     public static function getPages(): array
     {
         return [
@@ -76,5 +96,5 @@ class CategoryResource extends Resource
             'create' => Pages\CreateCategory::route('/create'),
             'edit' => Pages\EditCategory::route('/{record}/edit'),
         ];
-    }
+    }    
 }

@@ -3,45 +3,55 @@
 namespace App\Observers;
 
 use App\Models\Reglement;
-use App\Models\Inventory;
-use App\Models\Order;
-use Illuminate\Support\Facades\Log;
+use App\Services\StockManager;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ReglementObserver
 {
-    public function created(Reglement $reglement): void
+    protected StockManager $stockManager;
+
+    public function __construct(StockManager $stockManager)
+    {
+        $this->stockManager = $stockManager;
+    }
+
+    public function process(Reglement $reglement): void
     {
         DB::transaction(function () use ($reglement) {
-            // 1. Déduire le stock de l'inventaire du client
-            foreach ($reglement->details as $detail) {
-                $inventory = Inventory::whereHas('pointDeVente.responsable', function ($q) use ($reglement) {
-                    $q->where('id', $reglement->client_id);
-                })->where('unite_de_vente_id', $detail->unite_de_vente_id)->first();
-
-                if ($inventory) {
-                    if ($inventory->quantite_stock < $detail->quantite_vendue) {
-                        Log::warning("Stock insuffisant pour unité de vente ID {$detail->unite_de_vente_id} pour client ID {$reglement->client_id}");
-                        continue; // Ou lever exception selon besoin
-                    }
-                    $inventory->decrement('quantite_stock', $detail->quantite_vendue);
-                } else {
-                    Log::warning("Inventaire non trouvé pour unité de vente ID {$detail->unite_de_vente_id} et client ID {$reglement->client_id}");
-                }
-            }
-
-            // 2. Mettre à jour le statut de paiement des commandes associées.
-            foreach ($reglement->orders as $order) {
-                $totalPaye = $order->reglements()->sum('montant_verse');
-                $order->montant_paye = $totalPaye;
-
-                if ($totalPaye >= $order->montant_total) {
-                    $order->statut_paiement = 'Complètement réglé';
-                } else {
-                    $order->statut_paiement = 'Partiellement réglé';
-                }
-                $order->save();
-            }
+            $this->processStockDeduction($reglement);
+            $this->processPaymentStatusUpdate($reglement);
         });
+    }
+
+    private function processStockDeduction(Reglement $reglement): void
+    {
+        $reglement->load('details.uniteDeVente', 'orders.pointDeVente');
+        
+        // La condition sur 'is_vente_directe' a disparu !
+        if ($reglement->details->isEmpty() || $reglement->orders->isEmpty()) {
+            return;
+        }
+
+        // On déduit le stock du point de vente de la première commande associée.
+        $pointDeVente = $reglement->orders->first()->pointDeVente;
+        if (!$pointDeVente) {
+            throw new \Exception("Point de vente non trouvé pour le règlement ID {$reglement->id}.");
+        }
+
+        foreach ($reglement->details as $detail) {
+            $this->stockManager->decreasePointDeVenteStock($pointDeVente, $detail->uniteDeVente, $detail->quantite_vendue);
+        }
+    }
+
+    private function processPaymentStatusUpdate(Reglement $reglement): void
+    {
+        $reglement->load('orders');
+        
+        foreach ($reglement->orders as $order) {
+            if (method_exists($order, 'updatePaymentStatus')) {
+                 $order->updatePaymentStatus();
+            }
+        }
     }
 }

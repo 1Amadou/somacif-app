@@ -16,9 +16,7 @@ class Product extends Model
         'slug',
         'description_courte',
         'description_longue',
-        'calibres',
         'origine',
-        'poids_moyen',
         'conservation',
         'infos_nutritionnelles',
         'idee_recette',
@@ -27,22 +25,26 @@ class Product extends Model
         'is_visible',
         'meta_titre',
         'meta_description',
+        // Le champ 'calibres' a été déplacé vers UniteDeVente pour plus de flexibilité.
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'images_galerie' => 'array',
-            'is_visible' => 'boolean',
-            'calibres' => 'array',
-        ];
-    }
+    protected $casts = [
+        'images_galerie' => 'array',
+        'is_visible' => 'boolean',
+    ];
 
+    /**
+     * Un Produit (ex: Tilapia) peut avoir plusieurs déclinaisons de vente.
+     */
     public function uniteDeVentes(): HasMany
     {
         return $this->hasMany(UniteDeVente::class);
     }
 
+    /**
+     * Relation pour voir le stock d'un produit à travers tous les points de vente.
+     * C'est une relation indirecte pour les rapports.
+     */
     public function pointsDeVenteStock(): BelongsToMany
     {
         return $this->belongsToMany(PointDeVente::class, 'inventory')

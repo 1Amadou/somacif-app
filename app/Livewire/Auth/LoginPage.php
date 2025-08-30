@@ -3,69 +3,74 @@
 namespace App\Livewire\Auth;
 
 use App\Models\Client;
+use App\Notifications\SmsNotification;
+use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 
 class LoginPage extends Component
 {
-    public string $tab = 'partenaire';
+    public ?string $identifiant = '';
+    public ?string $password = '';
+    public ?string $code = '';
 
-    // Propriétés pour la connexion Partenaire
-    public string $identifiant_unique = '';
     public bool $codeSent = false;
-    public string $verification_code = '';
+    public ?Client $clientToVerify = null;
 
-    // Propriétés pour la connexion Livreur
-    public string $phone = '';
-    public string $password = '';
-
-    public function sendVerificationCode()
+    // Étape 1 : Le client entre son identifiant et mot de passe
+    public function attemptLogin()
     {
-        $this->validate(['identifiant_unique' => 'required|string']);
-        $client = Client::where('identifiant_unique_somacif', $this->identifiant_unique)->first();
+        $this->validate([
+            'identifiant' => 'required|string',
+            'password' => 'required|string',
+        ]);
 
-        if ($client) {
-            $code = random_int(100000, 999999);
-            session(['verification_code' => $code, 'client_id_to_verify' => $client->id]);
-            session()->flash('test_code', $code);
-            // Ici, on enverrait le vrai SMS avec le système de notification
-            $this->codeSent = true;
-        } else {
-            $this->addError('identifiant_unique', 'Cet identifiant est inconnu.');
-        }
-    }
+        $credentials = [
+            'identifiant_unique_somacif' => $this->identifiant,
+            'password' => $this->password,
+        ];
 
-    public function verifyClientCode()
-    {
-        $this->validate(['verification_code' => 'required|numeric|digits:6']);
-        if ($this->verification_code == session('verification_code')) {
-            $clientId = session('client_id_to_verify');
-            $client = Client::find($clientId);
-            session(['authenticated_client_id' => $clientId]);
-            session()->forget(['verification_code', 'client_id_to_verify']);
+        if (Auth::guard('client')->attempt($credentials)) {
+            $client = Client::find(Auth::guard('client')->id());
             
-            $client->loginLogs()->create([
-                'ip_address' => request()->ip(), 'user_agent' => request()->userAgent(), 'login_at' => now(),
-            ]);
+            // On envoie le code de vérification
+            $client->generateVerificationCode();
+            $client->notify(new SmsNotification('client.verify.sms', ['code' => $client->verification_code]));
 
-            return redirect()->intended(route('client.dashboard'));
+            $this->clientToVerify = $client;
+            $this->codeSent = true;
+            $this->password = ''; // On efface le mot de passe
+            
+            Notification::make()->title('Code envoyé !')->body('Un code de vérification a été envoyé à votre téléphone.')->success()->send();
+        } else {
+            $this->addError('identifiant', 'Identifiant ou mot de passe incorrect.');
         }
-        $this->addError('verification_code', 'Le code est incorrect.');
     }
 
-    public function loginLivreur()
+    // Étape 2 : Le client entre le code reçu
+    public function verifyCode()
     {
-        $credentials = $this->validate(['phone' => 'required', 'password' => 'required']);
-        if (Auth::guard('livreur')->attempt($credentials)) {
-            request()->session()->regenerate();
-            return redirect()->intended(route('livreur.dashboard'));
+        $this->validate(['code' => 'required|numeric']);
+
+        if ($this->clientToVerify) {
+            if ($this->clientToVerify->verification_code == $this->code && now()->lessThan($this->clientToVerify->verification_code_expires_at)) {
+                
+                // Le code est bon, on connecte l'utilisateur
+                Auth::guard('client')->login($this->clientToVerify, true);
+                
+                // On efface le code pour la sécurité
+                $this->clientToVerify->update(['verification_code' => null, 'verification_code_expires_at' => null]);
+
+                return $this->redirect(route('client.dashboard'), navigate: true);
+            } else {
+                $this->addError('code', 'Code invalide ou expiré.');
+            }
         }
-        $this->addError('phone', 'Les informations d\'identification ne correspondent pas.');
     }
 
     public function render()
     {
         return view('livewire.auth.login-page')
-            ->layout('components.layouts.app', ['metaTitle' => 'Connexion - SOMACIF']);
+            ->layout('components.layouts.auth');
     }
 }
