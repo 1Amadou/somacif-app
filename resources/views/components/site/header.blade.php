@@ -28,7 +28,7 @@
                 <div class="hidden lg:flex items-center space-x-4 text-sm uppercase tracking-wider">
                     <a href="{{ route('client.dashboard') }}" class="text-white font-semibold hover:text-primary">Mon Compte</a>
                     <span class="text-slate-600">|</span>
-                    <form method="POST" action="{{ route('client.logout') }}">
+                    <form method="POST" action="{{ route('logout') }}">
                         @csrf
                         <button type="submit" class="text-slate-300 hover:text-white">Déconnexion</button>
                     </form>

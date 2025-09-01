@@ -4,14 +4,18 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class Product extends Model
 {
     use HasFactory;
 
+    // On garde tous vos champs personnalisés
     protected $fillable = [
+        'category_id',
         'nom',
         'slug',
         'description_courte',
@@ -25,7 +29,6 @@ class Product extends Model
         'is_visible',
         'meta_titre',
         'meta_description',
-        // Le champ 'calibres' a été déplacé vers UniteDeVente pour plus de flexibilité.
     ];
 
     protected $casts = [
@@ -33,22 +36,23 @@ class Product extends Model
         'is_visible' => 'boolean',
     ];
 
-    /**
-     * Un Produit (ex: Tilapia) peut avoir plusieurs déclinaisons de vente.
-     */
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(Category::class);
+    }
+
     public function uniteDeVentes(): HasMany
     {
         return $this->hasMany(UniteDeVente::class);
     }
 
     /**
-     * Relation pour voir le stock d'un produit à travers tous les points de vente.
-     * C'est une relation indirecte pour les rapports.
+     * CORRECTION : Une relation "HasManyThrough".
+     * Elle dit à Laravel : "Un Produit a plusieurs Inventaires À TRAVERS ses Unités de Vente".
+     * C'est la relation correcte pour notre structure.
      */
-    public function pointsDeVenteStock(): BelongsToMany
+    public function inventories(): HasManyThrough
     {
-        return $this->belongsToMany(PointDeVente::class, 'inventory')
-                    ->withPivot('quantite_stock')
-                    ->withTimestamps();
+        return $this->hasManyThrough(Inventory::class, UniteDeVente::class);
     }
 }

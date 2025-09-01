@@ -13,39 +13,46 @@
             <div class="grid md:grid-cols-2 gap-6">
                 <div>
                     <label for="company-name" class="form-label">Nom de votre entreprise</label>
-                    <input type="text" id="company-name" wire:model="company_name" class="w-full bg-slate-800 border border-slate-700 rounded-md py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red">
+                    <input type="text" id="company-name" wire:model.defer="company_name" class="w-full bg-slate-800 border border-slate-700 rounded-md py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red">
                     @error('company_name') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
                 </div>
                 <div>
-                    <label for="company-type" class="form-label">Type d'entreprise</label>
-                    <select id="company-type" wire:model="company_type" class="w-full bg-slate-800 border border-slate-700 rounded-md py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red">
-                        <option>Hôtel/Restaurant</option>
-                        <option>Grossiste</option>
-                        <option>Particulier</option>
+                    <label for="company-type" class="form-label">Secteur d'activité</label>
+                    <select id="company-type" wire:model.defer="company_type" class="w-full bg-slate-800 border border-slate-700 rounded-md py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red">
+                        <option value="">Sélectionnez un secteur</option>
+                        <option value="Hôtel/Restaurant">Hôtel/Restaurant</option>
+                        <option value="Grossiste">Grossiste</option>
+                        <option value="Particulier">Particulier</option>
                     </select>
+                    @error('company_type') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
                 </div>
             </div>
             <div class="grid md:grid-cols-2 gap-6">
                 <div>
                     <label for="contact-name" class="form-label">Votre nom</label>
-                    <input type="text" id="contact-name" wire:model="contact_name" class="w-full bg-slate-800 border border-slate-700 rounded-md py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red">
-                     @error('contact_name') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
+                    <input type="text" id="contact-name" wire:model.defer="contact_name" class="w-full bg-slate-800 border border-slate-700 rounded-md py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red">
+                    @error('contact_name') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
                 </div>
                 <div>
                     <label for="phone" class="form-label">Numéro de téléphone</label>
-                    <input type="tel" id="phone" wire:model="phone" class="w-full bg-slate-800 border border-slate-700 rounded-md py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red">
-                     @error('phone') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
+                    <input type="tel" id="phone" wire:model.defer="phone" class="w-full bg-slate-800 border border-slate-700 rounded-md py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red">
+                    @error('phone') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
                 </div>
             </div>
             <div>
+                 <label for="email" class="form-label">Adresse e-mail</label>
+                 <input type="email" id="email" wire:model.defer="email" class="w-full bg-slate-800 border border-slate-700 rounded-md py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red">
+                 @error('email') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
+            </div>
+            <div>
                 <label for="message" class="form-label">Votre besoin (produits, quantités estimées...)</label>
-                <textarea id="message" wire:model="message" rows="5" class="w-full bg-slate-800 border border-slate-700 rounded-md py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red"></textarea>
-                 @error('message') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
+                <textarea id="message" wire:model.defer="message" rows="5" class="w-full bg-slate-800 border border-slate-700 rounded-md py-3 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-brand-red focus:ring-1 focus:ring-brand-red"></textarea>
+                @error('message') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
             </div>
             <div class="text-center pt-4">
                 <button type="submit" class="bg-brand-red hover-bg-brand-red text-white font-bold tracking-widest uppercase transition duration-300 transform hover:scale-105 py-4 px-12 rounded-sm">
-                    <span wire:loading.remove>Envoyer ma demande</span>
-                    <span wire:loading>Envoi en cours...</span>
+                    <span wire:loading.remove wire:target="submit">Envoyer ma demande</span>
+                    <span wire:loading wire:target="submit">Envoi en cours...</span>
                 </button>
             </div>
         </form>

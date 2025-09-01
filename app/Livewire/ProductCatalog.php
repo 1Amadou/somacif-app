@@ -4,96 +4,80 @@ namespace App\Livewire;
 
 use App\Models\Client;
 use App\Models\Product;
+use App\Models\UniteDeVente;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Gloudemans\Shoppingcart\Facades\Cart;
 
 class ProductCatalog extends Component
 {
     use WithPagination;
 
-    public ?Client $client = null;
+    public ?Client $client;
     public array $quantities = [];
     public array $selectedVariants = [];
 
+    // S'exécute au chargement du composant
     public function mount()
     {
-        if (session()->has('authenticated_client_id')) {
-            $this->client = Client::find(session('authenticated_client_id'));
-        }
+        $this->client = Auth::guard('client')->user();
 
-        // Seuls les produits visibles sont pris en compte
+        // Initialise la variante sélectionnée pour chaque produit avec sa première unité de vente
         $products = Product::where('is_visible', true)->with('uniteDeVentes')->get();
-
         foreach ($products as $product) {
-            // S'assure que le produit a au moins une unité de vente avant d'initialiser les valeurs par défaut.
-            if ($product->uniteDeVentes->isNotEmpty()) {
-                $firstVariantId = $product->uniteDeVentes->first()->id;
-                // Si aucune variante n'est sélectionnée, on prend la première par défaut.
-                // L'opérateur ?? est plus sûr que le simple 'first()'.
-                $this->selectedVariants[$product->id] = $this->selectedVariants[$product->id] ?? $firstVariantId;
-                // Initialise la quantité à 1 si elle n'existe pas déjà.
-                $this->quantities[$product->id] = $this->quantities[$product->id] ?? 1;
-            } else {
-                // Si un produit n'a pas de variante, on n'initialise rien pour éviter les erreurs.
-                $this->selectedVariants[$product->id] = null;
-                $this->quantities[$product->id] = 0;
-            }
+            $this->quantities[$product->id] = 1;
+            $this->selectedVariants[$product->id] = $product->uniteDeVentes->first()?->id;
         }
     }
 
+    // Fonction pour ajouter au panier
     public function addToCart($productId)
     {
-        // 1. Vérification de l'authentification
         if (!$this->client) {
-            session()->flash('error', 'Vous devez être connecté pour ajouter des produits au panier.');
-            return;
+            return redirect()->route('login');
         }
 
-        // 2. Récupération et validation de la variante et de la quantité
-        $variantId = $this->selectedVariants[$productId] ?? null;
-        $quantity = (int) ($this->quantities[$productId] ?? 1);
+        $uniteDeVenteId = $this->selectedVariants[$productId] ?? null;
+        $quantity = $this->quantities[$productId] ?? 1;
+        $unite = UniteDeVente::find($uniteDeVenteId);
 
-        if (!$variantId) {
-            session()->flash('error', 'Veuillez sélectionner une variante de produit.');
-            return;
+        if ($unite && $quantity > 0) {
+            Cart::instance('default')->add(
+                $unite->id,
+                $unite->product->nom . ' (' . $unite->nom_unite . ')',
+                $quantity,
+                $this->getPriceForClient($unite),
+                ['image' => $unite->product->image_principale]
+            );
+
+            $this->dispatch('cart_updated');
+            session()->flash('success', '"' . $unite->product->nom . '" a été ajouté au panier.');
+        } else {
+            session()->flash('error', 'Impossible d\'ajouter ce produit au panier.');
         }
-
-        if ($quantity <= 0) {
-            session()->flash('error', 'La quantité doit être supérieure à zéro.');
-            return;
-        }
-
-        // 3. Dispatch de l'événement avec des données validées
-        $this->dispatch('productAdded', variantId: $variantId, quantity: $quantity);
-        
-        // 4. Réinitialisation de la quantité
-        $this->quantities[$productId] = 1;
     }
-
-    public function getPriceForClient($uniteDeVente)
+    
+    // Logique pour déterminer le prix en fonction du type de client
+    public function getPriceForClient(UniteDeVente $unite)
     {
-        // Validation que le client et l'unité de vente existent avant de calculer le prix.
-        if (!$this->client || !$uniteDeVente) {
-            return 0;
-        }
-        
-        // Utilise un match pour une logique de prix plus claire.
-        return match ($this->client->type) {
-            'Grossiste' => $uniteDeVente->prix_grossiste,
-            'Hôtel/Restaurant' => $uniteDeVente->prix_hotel_restaurant,
-            'Particulier' => $uniteDeVente->prix_particulier,
-            default => 0,
+        return match ($this->client?->type) {
+            'Grossiste' => $unite->prix_grossiste,
+            'Hôtel/Restaurant' => $unite->prix_hotel_restaurant,
+            'Particulier' => $unite->prix_particulier,
+            default => $unite->prix_unitaire, // Prix par défaut
         };
     }
 
     public function render()
     {
-        // Utilise une requête plus précise pour ne récupérer que les données nécessaires.
         $products = Product::where('is_visible', true)
-            ->with(['uniteDeVentes', 'pointsDeVenteStock'])
+            ->with(['uniteDeVentes'])
             ->latest()
             ->paginate(12);
 
-        return view('livewire.product-catalog', ['products' => $products]);
+        return view('livewire.product-catalog', [
+            'products' => $products,
+        ]);
     }
 }

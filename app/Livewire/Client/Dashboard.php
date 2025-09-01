@@ -3,7 +3,7 @@
 namespace App\Livewire\Client;
 
 use App\Models\Client;
-use App\Models\Order;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -17,43 +17,55 @@ class Dashboard extends Component
 
     public function mount()
     {
-        $this->client = Client::find(session('authenticated_client_id'));
+        $client = Auth::guard('client')->user();
+        if (!$client) {
+            return redirect()->route('login');
+        }
+        $this->client = $client;
+        $this->client->load('pointsDeVente');
+    }
+    
+    public function updated($property)
+    {
+        if (in_array($property, ['search', 'statusFilter'])) {
+            $this->resetPage();
+        }
+    }
+    
+    public function confirmReception($orderId)
+    {
+        $order = $this->client->orders()->find($orderId);
+        if ($order && $order->statut === 'en_cours_livraison') {
+            $order->confirmReception();
+            session()->flash('success', 'Commande N°' . $order->numero_commande . ' marquée comme livrée !');
+        }
     }
 
-    public function confirmReception(Order $order)
+    private function calculateRemainingBalance($order)
     {
-        if ($order->client_id !== $this->client->id) {
-            abort(403, 'Action non autorisée.');
-        }
-
-        $order->update([
-            'statut' => 'Livrée',
-            'client_confirmed_at' => now(),
-        ]);
-
-        session()->flash('success', 'Réception de la commande ' . $order->numero_commande . ' confirmée !');
-        
-        // On ne redirige plus. Livewire va rafraîchir le composant tout seul.
+        return $order->montant_total - ($order->montant_paye ?? 0);
     }
 
     public function render()
     {
-        $ordersQuery = $this->client->orders()
-            ->when($this->search, function ($query) {
-                $query->where('numero_commande', 'like', '%' . $this->search . '%');
-            })
-            ->when($this->statusFilter, function ($query) {
-                $query->where('statut', $this->statusFilter);
-            })
-            ->latest();
+        $allOrders = $this->client->orders()->get()->each(function ($order) {
+            $order->remaining_balance = $this->calculateRemainingBalance($order);
+        });
 
-        $orders = $ordersQuery->paginate(10);
-        $allOrders = $this->client->orders()->get();
+        $ordersQuery = $this->client->orders()
+            ->with('livreur') // On pré-charge le livreur
+            ->when($this->search, fn($q) => $q->where('numero_commande', 'like', '%' . $this->search . '%'))
+            ->when($this->statusFilter, fn($q) => $q->where('statut', $this->statusFilter))
+            ->latest();
+            
+        $paginatedOrders = $ordersQuery->paginate(10);
+        $paginatedOrders->each(function ($order) {
+            $order->remaining_balance = $this->calculateRemainingBalance($order);
+        });
 
         return view('livewire.client.dashboard', [
-            'orders' => $orders,
             'allOrders' => $allOrders,
-        ])
-        ->layout('components.layouts.app', ['metaTitle' => 'Mon Compte - SOMACIF']);
+            'orders' => $paginatedOrders,
+        ])->layout('components.layouts.app');
     }
 }

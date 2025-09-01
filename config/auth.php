@@ -40,10 +40,15 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
-    'livreur' => [
-            'driver' => 'session',
-            'provider' => 'livreurs',
-        ],
+    'client' => [ 
+        'driver' => 'session',
+        'provider' => 'clients',
+    ],
+
+    'livreur' => [ 
+        'driver' => 'session',
+        'provider' => 'livreurs',
+    ],
     ],
 
     /*
@@ -69,10 +74,16 @@ return [
             'model' => App\Models\User::class,
         ],
         
-        'livreurs' => [
-            'driver' => 'eloquent',
-            'model' => App\Models\Livreur::class,
-        ],
+        'clients' => [ 
+        'driver' => 'eloquent',
+        'model' => App\Models\Client::class,
+    ],
+
+    'livreurs' => [ 
+        'driver' => 'eloquent',
+        'model' => App\Models\Livreur::class,
+    ],
+        
     ],
 
     /*

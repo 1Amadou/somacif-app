@@ -9,12 +9,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('orders', function (Blueprint $table) {
-            // On change la colonne pour utiliser la nouvelle liste de statuts
+            // CORRECTION : Voici la liste finale et unifiée de tous les statuts possibles.
             $table->enum('statut', [
                 'en_attente', 
                 'validee', 
-                'prete_pour_livraison', 
-                'en_cours_de_livraison', 
+                'en_preparation', // Le statut qui manquait
+                'en_cours_livraison', 
                 'livree', 
                 'annulee'
             ])->default('en_attente')->change();
@@ -23,9 +23,15 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Optionnel : revenir à l'ancien état si nécessaire
+        // Logique pour revenir à un état précédent si nécessaire
         Schema::table('orders', function (Blueprint $table) {
-            $table->enum('statut', ['en_attente', 'expediee', 'annulee'])->default('en_attente')->change();
+            $table->enum('statut', [
+                'en_attente', 
+                'validee', 
+                'en_cours_de_livraison', 
+                'livree', 
+                'annulee'
+            ])->default('en_attente')->change();
         });
     }
 };

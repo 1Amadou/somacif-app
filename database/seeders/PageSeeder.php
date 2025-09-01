@@ -150,17 +150,31 @@ class PageSeeder extends Seeder
         ]);
         
         // NOUVELLE PAGE : PARTICULIERS
-        Page::updateOrCreate(['slug' => 'particuliers'], [
-            'titres' => [
-                'header_title' => 'La Qualité SOMACIF pour Tous',
-                'presentation_title' => 'Le Meilleur de la Mer, Près de Chez Vous',
-            ],
-            'contenus' => [
-                'header_subtitle' => 'Retrouvez nos produits dans notre réseau de points de vente à Bamako.',
-                'presentation_text' => 'SOMACIF, ce n\'est pas que pour les professionnels ! Nous mettons un point d\'honneur à rendre nos produits de qualité accessibles à toutes les familles maliennes. Découvrez comment retrouver nos produits.',
-            ],
-            'images' => ['header_background' => null]
-        ]);
+Page::updateOrCreate(['slug' => 'particuliers'], [
+    'titres' => [
+        'header_title' => 'La Qualité SOMACIF pour Tous',
+        'presentation_title' => 'Le Meilleur de la Mer, Directement chez Vous',
+        'services_title' => 'Une Expérience d\'Achat Simplifiée',
+        'how_it_works_title' => 'Comment ça marche ?',
+        'form_title' => 'Envie de devenir un point de vente ?',
+    ],
+    'contenus' => [
+        'header_subtitle' => 'Savourez des produits de la mer d\'une fraîcheur et d\'une qualité exceptionnelles, sans vous déplacer.',
+        'presentation_text' => 'SOMACIF rend l\'excellence accessible à chaque famille malienne. Nous vous offrons une gamme variée de poissons et fruits de mer congelés, sélectionnés avec le plus grand soin pour garantir saveur et valeur nutritive.',
+        'services' => [
+            ['icon' => 'fas fa-fish', 'title' => 'Qualité Imbattable', 'description' => 'Chaque produit est pêché et surgelé dans les meilleures conditions pour préserver sa fraîcheur.'],
+            ['icon' => 'fas fa-store', 'title' => 'Points de Vente Locaux', 'description' => 'Retrouvez nos produits dans nos boutiques partenaires et les meilleurs supermarchés près de chez vous.'],
+            ['icon' => 'fas fa-heart', 'title' => 'Une Gamme pour la Famille', 'description' => 'Des poissons entiers aux filets, nous avons tout ce qu\'il vous faut pour des repas équilibrés et savoureux.'],
+        ],
+        'how_it_works_steps' => [
+            ['title' => '1. Trouvez-nous', 'description' => 'Utilisez notre carte interactive pour localiser le point de vente SOMACIF le plus proche.'],
+            ['title' => '2. Faites votre choix', 'description' => 'Explorez notre sélection de produits, depuis le capitaine au tilapia en passant par la crevette.'],
+            ['title' => '3. Savourez', 'description' => 'Préparez un repas délicieux et sain pour votre famille en quelques minutes.'],
+        ],
+        'form_subtitle' => 'Si vous êtes une boutique ou un supermarché et que vous souhaitez distribuer nos produits, remplissez ce formulaire.',
+    ],
+    'images' => ['header_background' => null, 'presentation_image' => null]
+]);
 
         // Page Société MISE À JOUR
         Page::updateOrCreate(['slug' => 'societe'], [

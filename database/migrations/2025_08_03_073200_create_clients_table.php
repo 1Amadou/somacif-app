@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('clients', function (Blueprint $table) {
             $table->id();
             $table->string('nom');
-            $table->enum('type', ['Grossiste', 'Hôtel/Restaurant', 'Particulier']);
+            $table->enum('type', ['Grossiste', 'Hôtel/Restaurant', 'Particulier', 'Defaut']);
             $table->string('telephone')->unique();
             $table->string('email')->unique()->nullable();
             $table->string('identifiant_unique_somacif')->unique();

@@ -2,152 +2,68 @@
 
 namespace App\Livewire;
 
-use App\Models\Client;
 use App\Models\Order;
-use App\Models\UniteDeVente;
-use App\Models\NotificationTemplate;
-use Illuminate\Support\Facades\Notification as Notifier;
+use App\Models\User;
 use App\Notifications\NewOrderAdminNotification;
+use Gloudemans\Shoppingcart\Facades\Cart;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 
 class CheckoutPage extends Component
 {
-    public Client $client;
-    public array $cartItems = [];
-    public array $deliveryAddresses = [];
-    public string $selectedAddress = '';
-    public string $notes = '';
-    public ?Order $latestOrder = null;
-    public float $totalAmount = 0;
-
-    public function mount()
-    {
-        $this->client = Client::find(session('authenticated_client_id'));
-        $this->cartItems = session('cart', []);
-
-        // Vérifie si le panier est vide ou contient des articles invalides avant de continuer.
-        if (empty($this->cartItems)) {
-            session()->flash('error', 'Votre panier est vide.');
-            return $this->redirect(route('products.index'), navigate: true);
-        }
-
-        foreach ($this->cartItems as $variantId => $item) {
-            if (!UniteDeVente::find($variantId)) {
-                // Redirige si un article du panier n'existe plus en base de données.
-                session()->flash('error', 'Un ou plusieurs produits de votre panier ne sont plus disponibles. Veuillez vérifier votre panier.');
-                session()->forget('cart');
-                return $this->redirect(route('products.index'), navigate: true);
-            }
-        }
-        
-        $addresses = $this->client->entrepots_de_livraison;
-        $this->deliveryAddresses = is_array($addresses) ? $addresses : [];
-        if (!empty($this->deliveryAddresses)) {
-            $this->selectedAddress = $this->deliveryAddresses[0];
-        }
-
-        $this->calculateTotal();
-    }
-
-    public function getPriceForClient($uniteDeVente)
-    {
-        if (!$this->client || !$uniteDeVente) return 0;
-        return match ($this->client->type) {
-            'Grossiste' => $uniteDeVente->prix_grossiste,
-            'Hôtel/Restaurant' => $uniteDeVente->prix_hotel_restaurant,
-            'Particulier' => $uniteDeVente->prix_particulier,
-            default => 0,
-        };
-    }
-
-    public function calculateTotal()
-    {
-        $this->totalAmount = 0;
-        foreach ($this->cartItems as $variantId => $item) {
-            $variant = UniteDeVente::find($variantId);
-            if ($variant) {
-                $unitPrice = $this->getPriceForClient($variant);
-                $this->totalAmount += $item['quantity'] * $unitPrice;
-            }
-        }
-    }
+    public $point_de_vente_id;
+    public $notes = '';
 
     public function placeOrder()
     {
-        if (empty($this->cartItems)) {
-            $this->addError('cart', 'Le panier est vide, impossible de passer la commande.');
-            return;
+        $this->validate([
+            'point_de_vente_id' => 'required|exists:point_de_ventes,id',
+        ]);
+
+        $client = Auth::guard('client')->user();
+        $cartItems = Cart::instance('default')->content();
+
+        if ($cartItems->isEmpty()) {
+            return redirect()->route('products.index');
         }
 
-        if (empty($this->deliveryAddresses)) {
-            $this->addError('selectedAddress', 'Aucun point de livraison n\'est configuré.');
-            return;
+        $order = Order::create([
+            'client_id' => $client->id,
+            'point_de_vente_id' => $this->point_de_vente_id,
+            'numero_commande' => 'CMD-' . strtoupper(uniqid()),
+            'statut' => 'en_attente',
+            'montant_total' => Cart::instance('default')->total(2, '.', ''),
+            'notes' => $this->notes,
+            'statut_paiement' => 'non_payee',
+        ]);
+
+        foreach ($cartItems as $item) {
+            $order->items()->create([
+                'unite_de_vente_id' => $item->id,
+                'quantite' => $item->qty,
+                'prix_unitaire' => $item->price,
+            ]);
         }
 
-        $this->validate(['selectedAddress' => 'required', 'notes' => 'nullable|string']);
-        
-        $totalCartons = array_sum(array_column($this->cartItems, 'quantity'));
-        if ($this->client->type === 'Grossiste' && $totalCartons < 100) {
-            $this->addError('cart', 'Les grossistes doivent commander un minimum de 100 cartons.');
-            return;
+        Cart::instance('default')->destroy();
+
+        $adminEmail = \App\Models\Setting::where('key', 'admin_notification_email')->value('value');
+        if ($adminEmail) {
+            (new User(['email' => $adminEmail]))->notify(new NewOrderAdminNotification($order));
         }
 
-        $this->calculateTotal();
-
-        // Crée une transaction de base de données pour assurer l'atomicité.
-        // Si une erreur survient, toutes les modifications sont annulées.
-        try {
-            \DB::transaction(function () {
-                $order = Order::create([
-                    'client_id' => $this->client->id,
-                    'numero_commande' => 'CMD-' . time(),
-                    'statut' => 'Reçue',
-                    'delivery_address' => $this->selectedAddress,
-                    'notes' => $this->notes,
-                    'montant_total' => $this->totalAmount,
-                ]);
-
-                foreach ($this->cartItems as $variantId => $item) {
-                    $variant = UniteDeVente::find($variantId);
-                    if (!$variant) {
-                        // Lève une exception si un produit n'est pas trouvé.
-                        throw new \Exception("Le produit avec l'ID {$variantId} n'existe pas.");
-                    }
-
-                    $unitPrice = $this->getPriceForClient($variant);
-                    $order->orderItems()->create([
-                        'product_id' => $variant->product_id,
-                        'unite_de_vente_id' => $variant->id,
-                        'nom_produit' => $item['name'],
-                        'unite' => $variant->nom_unite,
-                        'calibre' => $item['calibre'],
-                        'quantite' => $item['quantity'],
-                        'prix_unitaire' => $unitPrice,
-                    ]);
-                }
-
-                // Notifie l'admin.
-                $adminEmail = config('settings.admin_notification_email');
-                $template = NotificationTemplate::where('key', 'admin.new_order')->first();
-                if ($adminEmail && $template && $template->is_active && config('settings.mail_notifications_active')) {
-                    Notifier::route('mail', $adminEmail)->notify(new NewOrderAdminNotification($order));
-                }
-
-                session()->forget('cart');
-                $this->latestOrder = $order;
-                $this->dispatch('orderPlaced');
-            });
-        } catch (\Exception $e) {
-            // Gère les erreurs et informe l'utilisateur.
-            $this->addError('order_creation', 'Une erreur est survenue lors de la création de la commande. Veuillez réessayer.');
-            \Log::error("Erreur lors de la création de la commande: " . $e->getMessage());
-            return;
-        }
+        session()->flash('success', 'Votre commande a bien été passée ! Elle est en attente de validation.');
+        return redirect()->route('client.dashboard');
     }
 
     public function render()
     {
-        return view('livewire.checkout-page')
-            ->layout('components.layouts.app', ['metaTitle' => 'Finaliser ma commande']);
+        $client = Auth::guard('client')->user();
+        $pointsDeVente = $client->pointsDeVente()->pluck('nom', 'id');
+        $cartItems = Cart::instance('default')->content();
+        $cartTotal = Cart::instance('default')->total(0, ',', ' ');
+
+        return view('livewire.checkout-page', compact('pointsDeVente', 'cartItems', 'cartTotal'))
+            ->layout('components.layouts.app');
     }
 }

@@ -1,38 +1,47 @@
 <div class="py-24">
     <div class="container mx-auto px-6">
-        <a href="{{ route('client.dashboard') }}" class="text-sm brand-red hover:text-red-400"><i class="fas fa-arrow-left mr-2"></i>Retour au tableau de bord</a>
-        <h1 class="text-5xl font-teko uppercase text-white mt-4">Modifier la Commande</h1>
-        <p class="text-slate-400">Commande <span class="font-mono text-white">{{ $order->numero_commande }}</span></p>
+        <div class="mb-8">
+            <a href="{{ route('client.orders.show', $order) }}" class="text-slate-400 hover:text-white text-sm"><i class="fas fa-arrow-left mr-2"></i>Annuler et retourner au détail</a>
+            <h1 class="text-5xl font-teko uppercase text-white mt-2">Modifier la Commande</h1>
+            <p class="font-mono text-slate-300">{{ $order->numero_commande }}</p>
+        </div>
 
-        <div class="mt-8 bg-dark-card border border-border-dark rounded-lg p-8">
-            <h2 class="text-2xl font-teko text-white mb-4">Articles de votre commande</h2>
-            <div class="space-y-4">
-                @forelse($items as $itemId => $item)
-                    <div class="flex justify-between items-center border-b border-border-dark pb-4">
-                        <div>
-                            <p class="font-bold text-white">{{ $item['nom_produit'] }}</p>
-                            <p class="text-sm text-slate-400">Calibre : {{ $item['calibre'] }}</p>
-                        </div>
-                        <div class="flex items-center gap-4">
-                            <input type="number" min="1" wire:model="items.{{ $itemId }}.quantite" class="w-20 form-input text-center">
-                            <button wire:click="removeItem({{ $itemId }})" wire:confirm="Êtes-vous sûr de vouloir supprimer cet article ?" class="text-slate-500 hover:text-red-500">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                @empty
-                    <p class="text-center text-slate-400 py-8">Cette commande est vide.</p>
-                @endforelse
+        <div class="grid lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-2 bg-dark-card border border-border-dark rounded-lg">
+                <div class="p-6">
+                    <ul class="space-y-4">
+                        @forelse ($items as $itemId => $item)
+                        <li class="flex items-center border-b border-border-dark pb-4 last:border-b-0 last:pb-0">
+                            <div class="flex-grow">
+                                <p class="font-bold text-white">{{ $item['name'] }}</p>
+                                <p class="text-sm text-slate-400">{{ number_format($item['price'], 0, ',', ' ') }} FCFA / unité</p>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <input type="number" min="1" wire:model.live="items.{{ $itemId }}.quantity" class="w-20 form-input text-center">
+                                <button wire:click="removeItem({{ $itemId }})" class="text-red-500 hover:text-red-400"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </li>
+                        @empty
+                        <p class="text-slate-400 text-center py-8">Cette commande est vide.</p>
+                        @endforelse
+                    </ul>
+                </div>
             </div>
 
-            @if(!empty($items))
-                <div class="text-right mt-6">
-                    <button wire:click="saveOrder" wire:loading.attr="disabled" class="bg-green-600 hover:bg-green-700 text-white font-bold tracking-widest uppercase py-3 px-8 rounded-sm disabled:opacity-50">
-                        <span wire:loading.remove>Sauvegarder les modifications</span>
-                        <span wire:loading>Sauvegarde...</span>
+            <div class="lg:col-span-1 bg-dark-card border border-border-dark rounded-lg p-6 h-fit">
+                <h3 class="text-2xl font-teko text-white mb-4 border-b border-border-dark pb-4">Nouveau Récapitulatif</h3>
+                <div class="mt-6 pt-6 border-t border-border-dark">
+                    <div class="flex justify-between font-bold text-lg text-white">
+                        <span>Nouveau Total</span>
+                        <span>{{ number_format($newTotal, 0, ',', ' ') }} FCFA</span>
+                    </div>
+                </div>
+                <div class="mt-6">
+                    <button wire:click="saveChanges" wire:loading.attr="disabled" class="btn btn-primary w-full text-center">
+                        Enregistrer les modifications
                     </button>
                 </div>
-            @endif
+            </div>
         </div>
     </div>
 </div>

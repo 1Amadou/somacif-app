@@ -82,4 +82,16 @@ class Order extends Model
             $this->save();
         });
     }
+
+    public function confirmReception(): void
+    {
+        if ($this->statut === 'en_cours_livraison') {
+            $this->statut = 'livree';
+            $this->client_confirmed_at = now();
+            $this->save();
+
+            // Ici, on pourrait déclencher une notification à l'admin
+            // $admin->notify(new OrderDeliveredByClientNotification($this));
+        }
+    }
 }

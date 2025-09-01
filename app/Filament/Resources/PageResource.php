@@ -48,7 +48,7 @@ class PageResource extends Resource
     private static function getSpecificFormSchema(string $slug = null): array
     {
         return match ($slug) {
-            'grossistes', 'hotels-restaurants' => [
+            'grossistes', 'hotels-restaurants', 'particuliers' => [
             Forms\Components\Tabs::make('Contenu')->tabs([
                 Forms\Components\Tabs\Tab::make('En-tête')->schema([
                     Forms\Components\TextInput::make('titres.header_title')->label('Titre Principal'),
@@ -81,9 +81,9 @@ class PageResource extends Resource
                 ]),
             ]),
         ],
-        'particuliers' => [
-            // Formulaire simple pour la page Particuliers
-        ],
+        // 'particuliers' => [
+        //     // Formulaire simple pour la page Particuliers
+        // ],
 
             '_header' => [
             Forms\Components\Section::make('Header Global')->schema([
@@ -237,14 +237,14 @@ class PageResource extends Resource
                     Forms\Components\FileUpload::make('images.offer_gros_image')->label('Image')->image()->disk('public')->directory('pages'),
                 ]),
             ],
-            'produits'|'actualites'|'points-de-vente'|'contact' => [
+            'actualites'|'points-de-vente'|'contact' => [
                  Forms\Components\Section::make('En-tête de page')->schema([
                     Forms\Components\TextInput::make('titres.header_title')->label('Titre'),
                     Forms\Components\Textarea::make('contenus.header_subtitle')->label('Sous-titre'),
                     Forms\Components\FileUpload::make('images.header_background')->label('Image de fond')->image()->disk('public')->directory('pages'),
                 ]),
             ],
-            'catalogue-visiteur' => [
+            'catalogue-visiteur','produits' => [
     Forms\Components\Tabs::make('Contenu')->tabs([
         Forms\Components\Tabs\Tab::make('En-tête')->schema([
             Forms\Components\TextInput::make('titres.header_title')->label('Titre Principal'),

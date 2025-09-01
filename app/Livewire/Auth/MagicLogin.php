@@ -15,6 +15,7 @@ class MagicLogin extends Component
     public ?string $code = '';
     public bool $codeSent = false;
     public ?string $userType = null;
+    public $userToVerify = null;
 
     // Étape 1 : L'utilisateur entre son identifiant/email
     public function sendCode()
@@ -35,6 +36,7 @@ class MagicLogin extends Component
             $user->generateVerificationCode();
             $user->notify(new MagicLoginCodeNotification($user->verification_code));
 
+            $this->userToVerify = $user;
             $this->codeSent = true;
             Notification::make()->title('Code envoyé !')->body('Un code de vérification a été envoyé à votre adresse email.')->success()->send();
         } else {
@@ -47,14 +49,7 @@ class MagicLogin extends Component
     {
         $this->validate(['code' => 'required|numeric']);
 
-        $user = null;
-        if ($this->userType === 'client') {
-            $user = Client::where('email', $this->identifier)
-                          ->orWhere('identifiant_unique_somacif', $this->identifier)
-                          ->first();
-        } elseif ($this->userType === 'livreur') {
-            $user = Livreur::where('email', $this->identifier)->first();
-        }
+        $user = $this->userToVerify;
 
         if ($user && $user->verification_code == $this->code && now()->lessThan($user->verification_code_expires_at)) {
             $guard = $this->userType; // 'client' ou 'livreur'

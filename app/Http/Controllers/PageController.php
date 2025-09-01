@@ -9,6 +9,7 @@ use App\Models\Post;
 use App\Models\Product;
 use Illuminate\View\View;
 
+
 class PageController extends Controller
 {
     /**
@@ -29,10 +30,6 @@ class PageController extends Controller
 
     /**
      * Affiche une page statique générique par son slug.
-     * Gère "societe", "nos-offres", "contact", etc.
-     */
-     /**
-     * Affiche une page statique générique.
      */
     public function show(string $slug): View
     {
@@ -40,7 +37,9 @@ class PageController extends Controller
         $viewName = 'pages.' . $slug;
 
         if (!view()->exists($viewName)) {
-            return view('pages.legal', ['page' => $page]); // Utilisez une vue existante
+            // Si la vue n'existe pas, on peut utiliser une vue existante comme fallback
+            // J'ai renommé 'pages.legal' en 'pages.show' pour plus de généricité.
+            return view('pages.show', ['page' => $page]);
         }
 
         return view($viewName, ['page' => $page]);
@@ -53,6 +52,26 @@ class PageController extends Controller
     public function pointsDeVente() { return $this->show('points-de-vente'); }
     public function contact() { return $this->show('contact'); }
     public function devenirPartenaire() { return $this->show('devenir-partenaire'); }
+    public function grossistes() { return $this->show('grossistes'); }
+    
+    /**
+     * Affiche la page pour les particuliers.
+     */
+    public function particuliers(): View
+    {
+        $page = Page::where('slug', 'particuliers')->firstOrFail();
+        // Assumons que vous avez un modèle pour les points de vente
+        // $pointsDeVente = PointDeVente::where('is_active', true)->get();
+        return view('pages.particuliers', compact('page'));
+    }
+
+    /**
+     * Affiche la page pour les hôtels et restaurants.
+     */
+    public function hotelsRestaurants(): View
+    {
+        return $this->show('hotels-restaurants');
+    }
 
     /**
      * Affiche la page du catalogue de produits.
@@ -61,20 +80,32 @@ class PageController extends Controller
     {
         $page = Page::where('slug', 'catalogue')->firstOrFail();
         $products = Product::where('is_visible', true)->paginate(12);
-        $authenticatedClient = auth('client')->user();
 
-        return view('pages.products.index', compact('page', 'products', 'authenticatedClient'));
+        // La variable $authenticatedClient n'est pas utilisée dans la vue et peut être retirée.
+        return view('pages.products.index', compact('page', 'products'));
+    }
+
+     /**
+     * NOUVEAU : Affiche le catalogue de produits.
+     */
+    public function products()
+    {
+        $page = Page::where('slug', 'produits')->firstOrFail();
+        $products = Product::where('is_visible', true)->latest()->paginate(12);
+        return view('pages.products.index', compact('page', 'products'));
     }
 
     /**
-     * Affiche la page de détail d'un produit.
+     * NOUVEAU : Affiche un produit spécifique.
+     * Grâce au "Route Model Binding", Laravel trouve le produit automatiquement à partir du slug dans l'URL.
      */
-    public function showProduct(Product $product): View
+    public function productShow(Product $product)
     {
-        $relatedProducts = Product::where('id', '!=', $product->id)->inRandomOrder()->limit(4)->get();
-        $authenticatedClient = auth('client')->user();
-
-        return view('pages.products.show', compact('product', 'relatedProducts', 'authenticatedClient'));
+        if (!$product->is_visible) {
+            abort(404);
+        }
+        $relatedProducts = Product::where('is_visible', true)->where('id', '!=', $product->id)->inRandomOrder()->take(4)->get();
+        return view('pages.products.show', compact('product', 'relatedProducts'));
     }
     
     /**
