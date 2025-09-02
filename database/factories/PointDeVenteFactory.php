@@ -2,25 +2,25 @@
 
 namespace Database\Factories;
 
+use App\Models\Client;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\PointDeVente>
- */
 class PointDeVenteFactory extends Factory
 {
-    /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
         return [
-            'nom' => 'Point de Vente ' . $this->faker->city,
+            'nom' => 'Point de Vente ' . $this->faker->unique()->company(),
             'type' => $this->faker->randomElement(['Principal', 'Secondaire', 'Partenaire']),
-            'adresse' => $this->faker->address,
-            'telephone' => $this->faker->phoneNumber,
+            'adresse' => $this->faker->address(),
+            'telephone' => $this->faker->phoneNumber(),
+            
+           
+            // On lie le responsable et le client au même client par défaut.
+            'client_id' => Client::factory(),
+            'responsable_id' => function (array $attributes) {
+                return $attributes['client_id'];
+            },
         ];
     }
 }

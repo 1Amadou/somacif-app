@@ -94,4 +94,14 @@ class Order extends Model
             // $admin->notify(new OrderDeliveredByClientNotification($this));
         }
     }
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($order) {
+            if (empty($order->numero_commande)) {
+                $order->numero_commande = 'CMD-' . date('Ymd') . '-' . strtoupper(uniqid());
+            }
+        });
+    }
 }
