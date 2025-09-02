@@ -28,5 +28,11 @@ class PointDeVente extends Model
 {
     return $this->hasMany(Inventory::class);
 }
+public function getInventoryStock(int $uniteDeVenteId): int
+    {
+        return $this->inventory()
+                    ->where('unite_de_vente_id', $uniteDeVenteId)
+                    ->value('stock') ?? 0;
+    }
     
 }
