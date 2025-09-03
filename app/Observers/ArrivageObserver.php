@@ -18,20 +18,19 @@ class ArrivageObserver
     }
 
     public function created(Arrivage $arrivage): void
-    {
-        // L'utilisation d'une transaction garantit que soit tout réussit, soit tout échoue.
-        DB::transaction(function () use ($arrivage) {
-            if (is_array($arrivage->details_produits)) {
-                foreach ($arrivage->details_produits as $detail) {
-                    // On s'assure que les données nécessaires existent
-                    if (isset($detail['unite_de_vente_id'], $detail['quantite'])) {
-                        $uniteDeVente = UniteDeVente::find($detail['unite_de_vente_id']);
-                        if ($uniteDeVente) {
-                            $this->stockManager->increaseMainStock($uniteDeVente, (int)$detail['quantite']);
-                        }
+{
+    DB::transaction(function () use ($arrivage) {
+        if (is_array($arrivage->details_produits)) {
+            foreach ($arrivage->details_produits as $detail) {
+                if (isset($detail['unite_de_vente_id'], $detail['quantite'])) {
+                    $uniteDeVente = UniteDeVente::find($detail['unite_de_vente_id']);
+                    if ($uniteDeVente) {
+                        // On appelle la nouvelle méthode, en passant null pour le point de vente (car c'est le stock principal)
+                        $this->stockManager->increaseInventoryStock($uniteDeVente, (int)$detail['quantite'], null);
                     }
                 }
             }
-        });
-    }
+        }
+    });
+}
 }

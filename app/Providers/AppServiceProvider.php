@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Notification as Notifier;
+use App\Models\VenteDirecte;
+use App\Observers\VenteDirecteObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -60,6 +62,7 @@ class AppServiceProvider extends ServiceProvider
         Order::observe(OrderObserver::class);
         OrderItem::observe(OrderItemObserver::class);
         Reglement::observe(ReglementObserver::class);
+        VenteDirecte::observe(VenteDirecteObserver::class);
     }
 
     /**

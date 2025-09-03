@@ -2,6 +2,7 @@
 
 namespace App\Observers;
 
+use App\Models\Order;
 use App\Models\Reglement;
 use App\Services\StockManager;
 use Illuminate\Support\Facades\DB;
@@ -16,42 +17,27 @@ class ReglementObserver
         $this->stockManager = $stockManager;
     }
 
-    public function process(Reglement $reglement): void
+    public function created(Reglement $reglement): void
     {
+        // On s'assure que le traitement se fait dans une transaction atomique
         DB::transaction(function () use ($reglement) {
-            $this->processStockDeduction($reglement);
-            $this->processPaymentStatusUpdate($reglement);
+            $reglement->load('orders');
+            
+            // On met à jour le statut de paiement pour chaque commande liée au règlement
+            foreach ($reglement->orders as $order) {
+                if ($order->client_id !== $reglement->client_id) {
+                    throw new \Exception("Le règlement concerne une commande d'un autre client.");
+                }
+                $order->updatePaymentStatus();
+            }
         });
     }
 
-    private function processStockDeduction(Reglement $reglement): void
+    public function updated(Reglement $reglement): void
     {
-        $reglement->load('details.uniteDeVente', 'orders.pointDeVente');
-        
-        // La condition sur 'is_vente_directe' a disparu !
-        if ($reglement->details->isEmpty() || $reglement->orders->isEmpty()) {
-            return;
-        }
-
-        // On déduit le stock du point de vente de la première commande associée.
-        $pointDeVente = $reglement->orders->first()->pointDeVente;
-        if (!$pointDeVente) {
-            throw new \Exception("Point de vente non trouvé pour le règlement ID {$reglement->id}.");
-        }
-
-        foreach ($reglement->details as $detail) {
-            $this->stockManager->decreasePointDeVenteStock($pointDeVente, $detail->uniteDeVente, $detail->quantite_vendue);
-        }
-    }
-
-    private function processPaymentStatusUpdate(Reglement $reglement): void
-    {
-        $reglement->load('orders');
-        
-        foreach ($reglement->orders as $order) {
-            if (method_exists($order, 'updatePaymentStatus')) {
-                 $order->updatePaymentStatus();
-            }
+        // Si les commandes liées au règlement changent, on met à jour les statuts
+        if ($reglement->isDirty('orders')) {
+            $this->created($reglement);
         }
     }
 }

@@ -17,6 +17,7 @@ class OrderObserver
 
     public function updated(Order $order): void
     {
+        // On ne gère le stock que si le statut change pour 'validee'
         if ($order->isDirty('statut') && $order->statut === 'validee') {
             $this->handleStockForValidatedOrder($order);
         }
@@ -24,6 +25,7 @@ class OrderObserver
 
     public function created(Order $order): void
     {
+        // On ne gère le stock que si la commande est directement créée avec le statut 'validee'
         if ($order->statut === 'validee') {
             $this->handleStockForValidatedOrder($order);
         }
@@ -34,16 +36,16 @@ class OrderObserver
         DB::transaction(function () use ($order) {
             $order->load('items.uniteDeVente', 'pointDeVente');
 
-            // La condition a disparu ! On part du principe qu'il y a TOUJOURS un point de vente.
             if (!$order->pointDeVente) {
                 throw new \Exception("Une commande validée doit être associée à un point de vente.");
             }
 
             foreach ($order->items as $item) {
-                // Diminue le stock principal
-                $this->stockManager->decreaseMainStock($item->uniteDeVente, $item->quantite);
-                // Augmente TOUJOURS le stock du point de vente
-                $this->stockManager->increasePointDeVenteStock($order->pointDeVente, $item->uniteDeVente, $item->quantite);
+                // Diminue le stock principal (qui est l'inventaire avec point_de_vente_id = null)
+                $this->stockManager->decreaseInventoryStock($item->uniteDeVente, $item->quantite, null);
+                
+                // Augmente le stock du point de vente
+                $this->stockManager->increaseInventoryStock($item->uniteDeVente, $item->quantite, $order->pointDeVente);
             }
         });
     }

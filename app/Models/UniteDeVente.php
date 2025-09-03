@@ -15,7 +15,7 @@ class UniteDeVente extends Model
         'product_id',
         'nom_unite',
         'prix_unitaire',
-        'stock',
+        // 'stock', // On enlève cette ligne
         'calibre',
         'prix_grossiste',
         'prix_hotel_restaurant',
@@ -23,14 +23,16 @@ class UniteDeVente extends Model
     ];
 
     /**
-     * CORRECTION DÉFINITIVE DE ROBUSTESSE :
-     * Construit un nom complet et lisible qui ne plantera JAMAIS,
-     * même si le produit parent n'existe plus dans la base de données.
+     * Accesseur pour calculer le stock total à partir des inventaires.
+     * @return int|float
      */
+    public function getStockAttribute()
+    {
+        return $this->inventories()->sum('quantite');
+    }
+
     public function getNomCompletAttribute(): string
     {
-        // Utilise l'opérateur "null coalescing" pour fournir une valeur par défaut
-        // si la relation 'product' ou son nom est null.
         $productName = $this->product->nom ?? '[PRODUIT MANQUANT]';
 
         return "{$productName} - {$this->calibre} ({$this->nom_unite})";
@@ -50,10 +52,7 @@ class UniteDeVente extends Model
     {
         return $this->hasMany(Inventory::class, 'unite_de_vente_id');
     }
-
-    /**
-     * Correction de la relation pour pointer vers le bon modèle DetailReglement.
-     */
+    
     public function detailReglements(): HasMany
     {
         return $this->hasMany(DetailReglement::class, 'unite_de_vente_id');

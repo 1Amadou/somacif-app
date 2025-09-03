@@ -51,34 +51,32 @@ class Order extends Model
         $this->saveQuietly();
     }
 
-    /**
-     * NOUVELLE LOGIQUE : Annule une vente et remet les produits en stock.
-     */
     public function annulerVente(): void
     {
         if ($this->statut === 'annulee') {
-            return; // Déjà annulée, on ne fait rien.
+            return;
         }
 
         DB::transaction(function () {
-            $stockManager = app(StockManager::class); // On récupère le StockManager proprement
-            $this->load('items.uniteDeVente');
-
-            // On identifie d'où le stock a été pris pour le remettre au bon endroit.
-            if ($this->is_vente_directe || !$this->pointDeVente) {
-                // Pour une vente directe, le stock a été pris du stock principal. On le remet.
+            $stockManager = app(StockManager::class);
+            $this->load('items.uniteDeVente', 'pointDeVente');
+            
+            // On s'assure que le stock n'est pas déjà dans l'entrepôt
+            if ($this->statut === 'validee' || $this->statut === 'en_preparation' || $this->statut === 'en_cours_livraison') {
                 foreach ($this->items as $item) {
-                    $stockManager->increaseMainStock($item->uniteDeVente, $item->quantite);
+                    // Le stock a été transféré vers un point de vente. On doit le récupérer.
+                    $stockManager->decreaseInventoryStock($item->uniteDeVente, $item->quantite, $this->pointDeVente);
+                    $stockManager->increaseInventoryStock($item->uniteDeVente, $item->quantite, null);
                 }
-            } else {
-                // Pour une vente standard, le stock a été pris de l'inventaire du point de vente.
-                // NOTE : La logique de remboursement du stock client peut être plus complexe.
-                // Pour l'instant, nous nous concentrons sur la Vente Directe.
+            } elseif ($this->statut === 'livree') {
+                // Dans le cas d'une annulation après livraison, une décision métier est nécessaire :
+                // On remet le stock dans le point de vente ou pas ? On ne le remet pas dans l'entrepôt principal.
+                // Par prudence, on ne fait rien pour le stock ici, car il est "chez le client".
             }
 
             // Mettre à jour les statuts de la commande
             $this->statut = 'annulee';
-            $this->statut_paiement = 'Annulé';
+            $this->statut_paiement = 'Annulé'; // ou un statut plus spécifique comme 'annulee_sans_remboursement'
             $this->save();
         });
     }
@@ -89,9 +87,6 @@ class Order extends Model
             $this->statut = 'livree';
             $this->client_confirmed_at = now();
             $this->save();
-
-            // Ici, on pourrait déclencher une notification à l'admin
-            // $admin->notify(new OrderDeliveredByClientNotification($this));
         }
     }
     protected static function boot()
