@@ -17,6 +17,7 @@ use Filament\Forms\Get;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Config; // Ajouté
 
 class Settings extends Page implements HasForms
 {
@@ -38,7 +39,6 @@ class Settings extends Page implements HasForms
 
     public function form(Form $form): Form
     {
-        // Le formulaire reste le même, il est bien structuré.
         return $form->schema([
             Tabs::make('Configuration')->tabs([
                 Tabs\Tab::make('Notifications Générales')->schema([
@@ -49,9 +49,9 @@ class Settings extends Page implements HasForms
                 Tabs\Tab::make('Configuration Email (SMTP)')->schema([
                     Section::make('Paramètres du Serveur')->schema([
                         TextInput::make('mail_host')->label('Adresse du serveur SMTP')->required(),
-                        TextInput::make('mail_port')->label('Port SMTP')->required(),
+                        TextInput::make('mail_port')->label('Port SMTP')->required()->numeric(),
                         TextInput::make('mail_username')->label('Nom d\'utilisateur SMTP')->required(),
-                        TextInput::make('mail_password')->label('Mot de passe SMTP')->password()->required(),
+                        TextInput::make('mail_password')->label('Mot de passe SMTP')->password()->required()->dehydrateStateUsing(fn ($state) => base64_encode($state)),
                         Select::make('mail_encryption')->label('Type d\'encryption')->options(['tls' => 'TLS', 'ssl' => 'SSL'])->required(),
                     ])->columns(2),
                     Section::make('Paramètres d\'Expédition')->schema([
@@ -65,25 +65,23 @@ class Settings extends Page implements HasForms
                         ->helperText('Sélectionnez le service que vous utiliserez pour envoyer les SMS.')
                         ->live(),
                     Section::make('Configuration Twilio')->visible(fn (Get $get): bool => $get('active_sms_provider') === 'twilio')->schema([
-                        TextInput::make('twilio_sid')->label('Twilio Account SID'),
-                        TextInput::make('twilio_auth_token')->label('Twilio Auth Token')->password(),
-                        TextInput::make('twilio_from')->label('Numéro d\'expédition Twilio'),
+                        TextInput::make('twilio_sid')->label('Twilio Account SID')->required(),
+                        TextInput::make('twilio_auth_token')->label('Twilio Auth Token')->password()->required()->dehydrateStateUsing(fn ($state) => base64_encode($state)),
+                        TextInput::make('twilio_from')->label('Numéro d\'expédition Twilio')->required(),
                     ]),
                     Section::make('Configuration Nexmo (Vonage)')->visible(fn (Get $get): bool => $get('active_sms_provider') === 'nexmo')->schema([
-                        TextInput::make('nexmo_key')->label('Nexmo API Key'),
-                        TextInput::make('nexmo_secret')->label('Nexmo API Secret')->password(),
+                        TextInput::make('nexmo_key')->label('Nexmo API Key')->required(),
+                        TextInput::make('nexmo_secret')->label('Nexmo API Secret')->password()->required()->dehydrateStateUsing(fn ($state) => base64_encode($state)),
                     ]),
                     Section::make('Configuration Fast2')->visible(fn (Get $get): bool => $get('active_sms_provider') === 'fast2')->schema([
-                        TextInput::make('fast2_sender_id')->label('Fast2 Sender ID'),
-                        TextInput::make('fast2_auth_key')->label('Fast2 Auth Key')->password(),
+                        TextInput::make('fast2_sender_id')->label('Fast2 Sender ID')->required(),
+                        TextInput::make('fast2_auth_key')->label('Fast2 Auth Key')->password()->required()->dehydrateStateUsing(fn ($state) => base64_encode($state)),
                     ]),
                 ]),
             ])
         ])->statePath('data');
     }
 
-    // --- CORRECTION ---
-    // La méthode `save` est corrigée pour inclure le groupe.
     public function save(): void
     {
         $data = $this->form->getState();
@@ -92,7 +90,7 @@ class Settings extends Page implements HasForms
                 ['key' => $key],
                 [
                     'value' => $value ?? '',
-                    'group' => $this->getGroupForKey($key) 
+                    'group' => $this->getGroupForKey($key),
                 ]
             );
         }
@@ -101,7 +99,6 @@ class Settings extends Page implements HasForms
 
     protected function getFormActions(): array
     {
-        // Les actions restent les mêmes.
         return [
             Action::make('save')->label('Sauvegarder')->submit('save'),
             Action::make('testMail')->label('Envoyer un email de test')->action('sendTestMail')->color('gray')->requiresConfirmation(),
@@ -110,12 +107,21 @@ class Settings extends Page implements HasForms
 
     public function sendTestMail(): void
     {
-        // La logique d'envoi de test reste la même.
         $recipient = $this->form->getState()['admin_notification_email'] ?? null;
         if (!$recipient) {
             Notification::make()->title('Erreur')->body('Veuillez d\'abord définir et sauvegarder un email pour les notifications.')->danger()->send();
             return;
         }
+
+        // IMPORTANT : Re-configurer le mailer avec les données du formulaire avant d'envoyer
+        $formData = $this->form->getState();
+        Config::set('mail.mailers.smtp.host', $formData['mail_host']);
+        Config::set('mail.mailers.smtp.port', $formData['mail_port']);
+        Config::set('mail.mailers.smtp.username', $formData['mail_username']);
+        Config::set('mail.mailers.smtp.password', base64_decode($formData['mail_password']));
+        Config::set('mail.from.address', $formData['mail_from_address']);
+        Config::set('mail.from.name', $formData['mail_from_name']);
+        
         try {
             Mail::to($recipient)->send(new TestSmtpMail());
             Notification::make()->title('Email de test envoyé !')->body("Un email de test a été envoyé à {$recipient}.")->success()->send();
@@ -124,8 +130,6 @@ class Settings extends Page implements HasForms
         }
     }
 
-    // --- CORRECTION ---
-    // La méthode `getGroupForKey` est réintroduite pour déterminer le groupe de chaque paramètre.
     private function getGroupForKey(string $key): string
     {
         if (str_starts_with($key, 'twilio_')) return 'twilio';

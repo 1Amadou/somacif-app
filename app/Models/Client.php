@@ -14,7 +14,6 @@ class Client extends Authenticatable
     protected $fillable = [
         'nom', 'email', 'password', 'telephone', 'type', 
         'identifiant_unique_somacif', 'statut',
-        // Champs pour l'authentification sans mot de passe
         'verification_code', 'verification_code_expires_at',
     ];
 
@@ -23,40 +22,31 @@ class Client extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'verification_code' => 'hashed', // Hachage du code de vérification
         'verification_code_expires_at' => 'datetime',
     ];
 
-    /**
-     * Un client peut avoir plusieurs points de vente.
-     * C'est la relation la plus importante pour la distribution.
-     */
     public function pointsDeVente(): HasMany
     {
         return $this->hasMany(PointDeVente::class, 'responsable_id');
     }
 
-    /**
-     * Un client peut passer plusieurs commandes.
-     */
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
     }
 
-    /**
-     * Un client peut effectuer plusieurs règlements.
-     */
     public function reglements(): HasMany
     {
         return $this->hasMany(Reglement::class);
     }
-    /**
-     * 
-     */
-    public function generateVerificationCode(): void
+
+    public function generateVerificationCode(): int
     {
-        $this->verification_code = random_int(100000, 999999);
+        $code = random_int(100000, 999999);
+        $this->verification_code = $code; // Laravel va le hacher grâce au cast
         $this->verification_code_expires_at = now()->addMinutes(10);
         $this->save();
+        return $code; // Retourne le code en clair pour l'envoi
     }
 }

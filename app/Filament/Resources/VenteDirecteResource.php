@@ -27,10 +27,9 @@ class VenteDirecteResource extends Resource
 {
     protected static ?string $model = VenteDirecte::class;
 
-    protected static ?string $slug = 'ventes-directes';
-    protected static ?string $navigationIcon = 'heroicon-o-bolt';
-    protected static ?string $navigationGroup = 'Ventes & Commandes';
-    protected static ?int $navigationSort = 3;
+    protected static ?string $navigationIcon = 'heroicon-o-truck';
+    protected static ?string $navigationGroup = 'Ventes en Gros';
+    protected static ?int $navigationSort = 1;
     protected static ?string $label = 'Vente Directe';
     protected static ?string $pluralLabel = 'Ventes Directes';
 
@@ -102,11 +101,13 @@ class VenteDirecteResource extends Resource
                 Tables\Columns\TextColumn::make('date_vente')->date('d/m/Y')->label('Date')->sortable(),
                 Tables\Columns\TextColumn::make('montant_total')->money('XOF')->sortable(),
             ])
+            ->defaultSort('date_vente', 'desc')
             ->filters([
                 //
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
+                Tables\Actions\ViewAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -125,9 +126,7 @@ class VenteDirecteResource extends Resource
     
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
     
     public static function getPages(): array
@@ -136,6 +135,7 @@ class VenteDirecteResource extends Resource
             'index' => Pages\ListVenteDirectes::route('/'),
             'create' => Pages\CreateVenteDirecte::route('/create'),
             'edit' => Pages\EditVenteDirecte::route('/{record}/edit'),
+            'view' => Pages\ViewVenteDirecte::route('/{record}'),
         ];
     }
 }

@@ -12,7 +12,6 @@ class Livreur extends Authenticatable
 
     protected $fillable = [
         'nom', 'prenom', 'telephone', 'email', 'password',
-        // Champs pour l'authentification sans mot de passe
         'verification_code', 'verification_code_expires_at',
     ];
 
@@ -20,6 +19,7 @@ class Livreur extends Authenticatable
     
     protected $casts = [
         'password' => 'hashed',
+        'verification_code' => 'hashed', // Hachage du code de vérification
         'verification_code_expires_at' => 'datetime',
     ];
     
@@ -28,13 +28,12 @@ class Livreur extends Authenticatable
         return "{$this->prenom} {$this->nom}";
     }
 
-    /**
-     * LOGIQUE : Génère un code de vérification à 6 chiffres.
-     */
-    public function generateVerificationCode(): void
+    public function generateVerificationCode(): int
     {
-        $this->verification_code = random_int(100000, 999999);
+        $code = random_int(100000, 999999);
+        $this->verification_code = $code; // Laravel va le hacher grâce au cast
         $this->verification_code_expires_at = now()->addMinutes(10);
         $this->save();
+        return $code; // Retourne le code en clair pour l'envoi
     }
 }

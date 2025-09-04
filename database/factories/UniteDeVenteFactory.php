@@ -2,22 +2,25 @@
 
 namespace Database\Factories;
 
+use App\Models\Product;
+use App\Models\UniteDeVente;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 class UniteDeVenteFactory extends Factory
 {
+    protected $model = UniteDeVente::class;
+
     public function definition(): array
     {
-        $prix = $this->faker->numberBetween(10000, 25000);
         return [
-            // Le product_id sera fourni par le seeder
-            'nom_unite' => 'Carton 10kg',
+            'nom_unite' => $this->faker->unique()->word,
             'calibre' => $this->faker->randomElement(['Petit', 'Moyen', 'Gros']),
-            'prix_unitaire' => $prix,
-            'prix_grossiste' => $prix * 0.9, // 10% de réduction pour les grossistes
-            'prix_hotel_restaurant' => $prix * 0.95, // 5% de réduction
-            'prix_particulier' => $prix * 1.1, // 10% de majoration
-            'stock' => 0, // Le stock est initialement à 0, il sera ajouté par les arrivages
+            'prix_unitaire' => $this->faker->numberBetween(10000, 50000),
+            'prix_grossiste' => $this->faker->numberBetween(9000, 45000),
+            'prix_hotel_restaurant' => $this->faker->numberBetween(9500, 47000),
+            'prix_particulier' => $this->faker->numberBetween(11000, 55000),
+            'stock' => 0,
+            'product_id' => Product::factory(),
         ];
     }
 }

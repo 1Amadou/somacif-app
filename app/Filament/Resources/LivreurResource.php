@@ -21,7 +21,6 @@ class LivreurResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-truck';
     protected static ?string $navigationGroup = 'Gestion des Utilisateurs';
 
-    // AMÉLIORATION : On utilise notre attribut virtuel pour les titres
     protected static ?string $recordTitleAttribute = 'full_name';
 
     public static function form(Form $form): Form
@@ -48,7 +47,8 @@ class LivreurResource extends Resource
                         TextInput::make('email')
                             ->email()
                             ->maxLength(255)
-                            ->unique(Livreur::class, 'email', ignoreRecord: true),
+                            ->unique(Livreur::class, 'email', ignoreRecord: true)
+                            ->nullable(), // Rendu optionnel
                         TextInput::make('password')
                             ->password()
                             ->dehydrateStateUsing(fn ($state) => Hash::make($state))
@@ -63,7 +63,6 @@ class LivreurResource extends Resource
     {
         return $table
             ->columns([
-                // AMÉLIORATION : On affiche le nom complet directement
                 TextColumn::make('full_name')
                     ->label('Nom Complet')
                     ->searchable(['nom', 'prenom'])
@@ -105,5 +104,5 @@ class LivreurResource extends Resource
             'create' => Pages\CreateLivreur::route('/create'),
             'edit' => Pages\EditLivreur::route('/{record}/edit'),
         ];
-    }    
+    }
 }

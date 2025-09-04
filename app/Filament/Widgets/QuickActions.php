@@ -11,6 +11,7 @@ use Filament\Widgets\Widget;
 class QuickActions extends Widget
 {
     protected static string $view = 'filament.widgets.quick-actions';
+    protected int | string | array $columnSpan = 'full'; // Pour que le widget occupe toute la largeur
 
     public function getActions(): array
     {
@@ -25,7 +26,7 @@ class QuickActions extends Widget
                 'label' => 'Nouvelle Commande',
                 'icon' => 'heroicon-o-shopping-cart',
                 'url' => OrderResource::getUrl('create'),
-                'color' => 'gray',
+                'color' => 'primary', // Couleur plus visible
             ],
             [
                 'label' => 'Vente Directe',

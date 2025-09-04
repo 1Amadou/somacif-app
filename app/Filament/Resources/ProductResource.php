@@ -12,6 +12,8 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class ProductResource extends Resource
 {
@@ -28,11 +30,19 @@ class ProductResource extends Resource
                 Forms\Components\Group::make()->schema([
                     Forms\Components\Tabs::make('Product Details')->tabs([
                         Forms\Components\Tabs\Tab::make('Informations Principales')->schema([
-                            Forms\Components\TextInput::make('nom')->required()->live(onBlur: true)
+                            Forms\Components\TextInput::make('nom')
+                                ->required()
+                                ->live(onBlur: true)
                                 ->afterStateUpdated(fn (Set $set, ?string $state) => $set('slug', Str::slug($state))),
-                            Forms\Components\TextInput::make('slug')->required()->unique(Product::class, 'slug', ignoreRecord: true),
-                            Forms\Components\MarkdownEditor::make('description_courte')->columnSpanFull(),
-                            Forms\Components\RichEditor::make('description_longue')->columnSpanFull(),
+                            Forms\Components\TextInput::make('slug')
+                                ->required()
+                                ->unique(ignoreRecord: true),
+                            Forms\Components\MarkdownEditor::make('description_courte')
+                                ->label('Description Courte')
+                                ->columnSpanFull(),
+                            Forms\Components\RichEditor::make('description_longue')
+                                ->label('Description Longue')
+                                ->columnSpanFull(),
                         ])->columns(2),
                         
                         Forms\Components\Tabs\Tab::make('Détails & Recettes')->schema([
@@ -47,15 +57,25 @@ class ProductResource extends Resource
 
                 Forms\Components\Group::make()->schema([
                     Forms\Components\Section::make('Statut et Images')->schema([
-                        Forms\Components\Toggle::make('is_visible')->label('Visible')->default(true),
-                        Forms\Components\FileUpload::make('image_principale')->image()->imageEditor()->disk('public')->directory('products'),
+                        Forms\Components\Toggle::make('is_visible')
+                            ->label('Visible sur la boutique')
+                            ->default(true),
+                        Forms\Components\FileUpload::make('image_principale')
+                            ->label('Image Principale')
+                            ->image()
+                            ->imageEditor()
+                            ->disk('public')
+                            ->directory('products')
+                            ->nullable(),
                         Forms\Components\FileUpload::make('images_galerie')
                             ->label('Galerie d\'images')
                             ->multiple()
                             ->image()
+                            ->imageEditor()
                             ->disk('public')
                             ->directory('products')
-                            ->reorderable(),
+                            ->reorderable()
+                            ->nullable(),
                     ]),
                     Forms\Components\Section::make('SEO')->schema([
                         Forms\Components\TextInput::make('meta_titre'),
@@ -73,14 +93,21 @@ class ProductResource extends Resource
                 Tables\Columns\TextColumn::make('nom')->searchable()->sortable(),
                 Tables\Columns\IconColumn::make('is_visible')->label('Visibilité')->boolean(),
                 Tables\Columns\TextColumn::make('uniteDeVentes_count')->counts('uniteDeVentes')->label('Calibres'),
-                Tables\Columns\TextColumn::make('uniteDeVentes_sum_stock')
-                    ->sum('uniteDeVentes', 'stock')
+                Tables\Columns\TextColumn::make('stock_total')
                     ->label('Stock Total')
-                    ->numeric()
-                    ->sortable(),
+                    ->state(function (Model $record): string {
+                        $stock = $record->uniteDeVentes()->withSum('inventories', 'quantite_stock')->get()->sum('inventories_sum_quantite_stock');
+                        return number_format($stock, 0, '', ' ');
+                    })
+                    ->sortable(query: function (Builder $query, string $direction): Builder {
+                        return $query
+                            ->withSum('uniteDeVentes.inventories', 'quantite_stock')
+                            ->orderBy('unite_de_ventes_inventories_sum_quantite_stock', $direction);
+                    }),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
             ]);
     }
 

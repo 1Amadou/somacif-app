@@ -1,7 +1,8 @@
 <?php
+
 namespace App\Filament\Widgets;
 
-use App\Models\ClientLoginLog;
+use App\Models\ClientLoginLog; // Ligne ajoutée pour importer le modèle
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
@@ -14,7 +15,6 @@ class ClientLoginHistory extends BaseWidget
     public function table(Table $table): Table
     {
         return $table
-            
             ->query(ClientLoginLog::latest('login_at'))
             ->heading('Historique des Connexions Partenaires')
             ->columns([

@@ -38,9 +38,6 @@ class SuiviParArrivage extends Page implements HasForms
             ]);
     }
 
-    /**
-     * AMÉLIORATION : La logique de calcul est entièrement revue pour être plus juste et performante.
-     */
     public function getSelectedArrivageData(): ?array
     {
         if (!$this->selectedArrivageId) {
@@ -53,17 +50,23 @@ class SuiviParArrivage extends Page implements HasForms
         }
 
         $reportData = [];
+        $totalCoutAchat = 0; // <-- NOUVEAU
+        $totalMontantVentes = 0; // <-- NOUVEAU
         
-        // On récupère les IDs de toutes les unités de vente de cet arrivage
         $uniteDeVenteIds = collect($arrivage->details_produits)->pluck('unite_de_vente_id')->unique()->toArray();
 
-        // On pré-charge toutes les données nécessaires en quelques requêtes au lieu de boucler
         $unitesDeVente = UniteDeVente::whereIn('id', $uniteDeVenteIds)->get()->keyBy('id');
         $inventories = Inventory::whereIn('unite_de_vente_id', $uniteDeVenteIds)->get()->groupBy('unite_de_vente_id');
-        $ventesDetails = Reglement::whereHas('details', fn(Builder $q) => $q->whereIn('unite_de_vente_id', $uniteDeVenteIds))
-            ->with('details')
+
+        // On cherche les ventes effectuées directement ou via des règlements
+        $ventesDirectes = \App\Models\VenteDirecteItem::whereHas('venteDirecte', fn(Builder $q) => $q->whereBetween('date_vente', [$arrivage->date_arrivage, now()]))
+            ->whereIn('unite_de_vente_id', $uniteDeVenteIds)
             ->get()
-            ->flatMap->details
+            ->groupBy('unite_de_vente_id');
+
+        $ventesReglements = \App\Models\ReglementItem::whereHas('reglement', fn(Builder $q) => $q->whereBetween('date_reglement', [$arrivage->date_arrivage, now()]))
+            ->whereIn('unite_de_vente_id', $uniteDeVenteIds)
+            ->get()
             ->groupBy('unite_de_vente_id');
 
         foreach ($arrivage->details_produits as $detail) {
@@ -71,39 +74,49 @@ class SuiviParArrivage extends Page implements HasForms
             $unite = $unitesDeVente->get($uniteId);
             if (!$unite) continue;
 
-            // Quantité vendue pour cette unité de vente
-            $quantiteVendue = $ventesDetails->get($uniteId, collect())->sum('quantite_vendue');
-            
-            // Montant total des ventes pour cette unité
-            $montantVentes = $ventesDetails->get($uniteId, collect())->sum(fn($d) => $d->quantite_vendue * $d->prix_de_vente_unitaire);
+            $quantiteRecue = $detail['quantite'] ?? 0;
+            $prixAchatUnitaire = $detail['prix_achat_unitaire'] ?? 0; // <-- NOUVEAU
 
+            // Calcul de la quantité totale vendue
+            $quantiteVendueDirecte = $ventesDirectes->get($uniteId, collect())->sum('quantite');
+            $quantiteVendueReglement = $ventesReglements->get($uniteId, collect())->sum('quantite_vendue');
+            $quantiteVendueTotale = $quantiteVendueDirecte + $quantiteVendueReglement;
+
+            // Calcul du montant total des ventes
+            $montantVentesDirectes = $ventesDirectes->get($uniteId, collect())->sum(fn($i) => $i->quantite * $i->prix_unitaire);
+            $montantVentesReglements = $ventesReglements->get($uniteId, collect())->sum(fn($i) => $i->quantite_vendue * $i->prix_de_vente_unitaire);
+            $montantVentesTotales = $montantVentesDirectes + $montantVentesReglements;
+            
             // Stock restant chez TOUS les clients pour cette unité
             $stockChezClients = $inventories->get($uniteId, collect())->sum('quantite_stock');
             
-            // CORRECTION : On utilise 'quantite' et non 'quantite_cartons'
-            $quantiteRecue = $detail['quantite'] ?? 0;
-
-            // NOUVELLE LOGIQUE : On calcule le stock total actuel (Entrepôt + Clients)
             $stockTotalActuel = $unite->stock + $stockChezClients;
+
+            // Calculs pour les totaux globaux
+            $totalCoutAchat += $quantiteRecue * $prixAchatUnitaire;
+            $totalMontantVentes += $montantVentesTotales;
 
             $reportData[] = [
                 'nom_produit' => $unite->nom_unite . ' (' . $unite->calibre . ')',
                 'quantite_recue_arrivage' => $quantiteRecue,
-                'quantite_vendue_total' => $quantiteVendue,
+                'prix_achat_unitaire' => $prixAchatUnitaire, // <-- NOUVEAU
+                'quantite_vendue_total' => $quantiteVendueTotale,
+                'montant_ventes_total' => $montantVentesTotales,
                 'stock_chez_clients_total' => $stockChezClients,
                 'stock_entrepot_actuel' => $unite->stock,
                 'stock_total_actuel' => $stockTotalActuel,
-                'montant_ventes_total' => $montantVentes,
             ];
         }
         
-        // Calcul du total global encaissé pour cet ensemble de produits
-        $totalEncaisse = collect($reportData)->sum('montant_ventes_total');
+        $margeBrute = $totalMontantVentes - $totalCoutAchat;
+        $benefice = $margeBrute; // Pour le moment, pas d'autres coûts
 
         return [
             'arrivage' => $arrivage,
             'reportData' => $reportData,
-            'totalEncaisse' => $totalEncaisse,
+            'totalCoutAchat' => $totalCoutAchat,
+            'totalMontantVentes' => $totalMontantVentes,
+            'benefice' => $benefice,
         ];
     }
 }

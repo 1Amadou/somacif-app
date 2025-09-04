@@ -40,7 +40,9 @@ class FournisseurResource extends Resource
                             ->tel(),
                         Forms\Components\TextInput::make('email_contact')
                             ->label('Email')
-                            ->email(),
+                            ->email()
+                            ->unique(ignoreRecord: true) // Ajout de la validation unique
+                            ->nullable(), // Optionnel
                     ])->columns(3),
                 Forms\Components\Section::make('Notes')
                     ->schema([
@@ -63,6 +65,8 @@ class FournisseurResource extends Resource
                     ->searchable(),
                 Tables\Columns\TextColumn::make('telephone_contact')
                     ->label('Téléphone'),
+                Tables\Columns\TextColumn::make('email_contact') // Ajout de la colonne email
+                    ->label('Email'),
             ])
             ->filters([
                 //

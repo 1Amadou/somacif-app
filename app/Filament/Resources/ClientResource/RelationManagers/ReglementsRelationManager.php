@@ -44,15 +44,19 @@ class ReglementsRelationManager extends RelationManager
                     })
             ])
             ->headerActions([
-                 // ACTION CLÉ : Crée un règlement pré-rempli pour ce client.
                 Tables\Actions\Action::make('create_reglement')
                     ->label('Nouveau Règlement')
                     ->url(fn () => ReglementResource::getUrl('create', ['client_id' => $this->getOwnerRecord()->id]))
                     ->icon('heroicon-o-plus-circle'),
             ])
             ->actions([
-                Tables\Actions\Action::make('view_reglement')->label('Détails')->icon('heroicon-o-pencil-square')
+                Tables\Actions\ViewAction::make() // Utilisation de l'action View
+                    ->url(fn ($record): string => ReglementResource::getUrl('view', ['record' => $record])),
+                Tables\Actions\EditAction::make() // Ajout d'une action d'édition explicite
                     ->url(fn ($record): string => ReglementResource::getUrl('edit', ['record' => $record])),
+            ])
+            ->emptyStateActions([
+                Tables\Actions\CreateAction::make()->url(fn () => ReglementResource::getUrl('create', ['client_id' => $this->getOwnerRecord()->id])),
             ]);
     }
 

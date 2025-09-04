@@ -15,37 +15,75 @@ class OrderObserver
         $this->stockManager = $stockManager;
     }
 
+    /**
+     * Gère la validation et l'annulation d'une commande.
+     */
     public function updated(Order $order): void
     {
-        // On ne gère le stock que si le statut change pour 'validee'
-        if ($order->isDirty('statut') && $order->statut === 'validee') {
-            $this->handleStockForValidatedOrder($order);
+        // Seule la modification du statut nous intéresse ici
+        if ($order->isDirty('statut')) {
+            $oldStatus = $order->getOriginal('statut');
+            $newStatus = $order->statut;
+
+            // Logique de transfert de stock
+            if ($newStatus === 'validee' && $oldStatus === 'en_attente') {
+                $this->transfertStockFromMainToPointDeVente($order);
+            }
+            
+            // Logique d'annulation : le stock doit être remis en place
+            if ($newStatus === 'annulee' && $oldStatus !== 'annulee') {
+                $this->cancelOrderStockTransfer($order);
+            }
         }
     }
 
-    public function created(Order $order): void
-    {
-        // On ne gère le stock que si la commande est directement créée avec le statut 'validee'
-        if ($order->statut === 'validee') {
-            $this->handleStockForValidatedOrder($order);
-        }
-    }
-
-    private function handleStockForValidatedOrder(Order $order): void
+    /**
+     * Effectue le transfert de stock du dépôt principal vers le point de vente du client.
+     */
+    protected function transfertStockFromMainToPointDeVente(Order $order): void
     {
         DB::transaction(function () use ($order) {
-            $order->load('items.uniteDeVente', 'pointDeVente');
-
-            if (!$order->pointDeVente) {
-                throw new \Exception("Une commande validée doit être associée à un point de vente.");
-            }
-
+            $order->load('items.uniteDeVente');
             foreach ($order->items as $item) {
-                // Diminue le stock principal (qui est l'inventaire avec point_de_vente_id = null)
-                $this->stockManager->decreaseInventoryStock($item->uniteDeVente, $item->quantite, null);
-                
-                // Augmente le stock du point de vente
-                $this->stockManager->increaseInventoryStock($item->uniteDeVente, $item->quantite, $order->pointDeVente);
+                // Déduire le stock de l'entrepôt principal (point_de_vente_id = null)
+                $this->stockManager->decreaseInventoryStock(
+                    $item->uniteDeVente,
+                    $item->quantite,
+                    null // Dépôt principal
+                );
+
+                // Augmenter le stock du point de vente du client
+                $this->stockManager->increaseInventoryStock(
+                    $item->uniteDeVente,
+                    $item->quantite,
+                    $order->point_de_vente_id
+                );
+            }
+        });
+    }
+
+    /**
+     * Annule le transfert de stock en cas d'annulation de la commande.
+     * Le stock est remis dans le dépôt principal.
+     */
+    protected function cancelOrderStockTransfer(Order $order): void
+    {
+        DB::transaction(function () use ($order) {
+            $order->load('items.uniteDeVente');
+            foreach ($order->items as $item) {
+                // Diminuer le stock du point de vente
+                $this->stockManager->decreaseInventoryStock(
+                    $item->uniteDeVente,
+                    $item->quantite,
+                    $order->point_de_vente_id
+                );
+
+                // Remettre le stock dans le dépôt principal
+                $this->stockManager->increaseInventoryStock(
+                    $item->uniteDeVente,
+                    $item->quantite,
+                    null // Dépôt principal
+                );
             }
         });
     }

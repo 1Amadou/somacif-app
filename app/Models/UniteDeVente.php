@@ -28,7 +28,7 @@ class UniteDeVente extends Model
      */
     public function getStockAttribute()
     {
-        return $this->inventories()->sum('quantite');
+        return $this->inventories()->sum('quantite_stock');
     }
 
     public function getNomCompletAttribute(): string

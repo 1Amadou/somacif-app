@@ -10,7 +10,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
-use Filament\Resources\Resource; // <-- CORRECTION : L'import manquant est ici
+use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Columns\BadgeColumn;
@@ -28,7 +28,6 @@ class PartnerApplicationResource extends Resource
 
     public static function form(Form $form): Form
     {
-        // Le formulaire est en lecture seule car on ne modifie pas une demande, on la traite.
         return $form
             ->schema([
                 TextInput::make('nom_entreprise')->disabled(),
@@ -37,6 +36,8 @@ class PartnerApplicationResource extends Resource
                 TextInput::make('email')->disabled(),
                 TextInput::make('secteur_activite')->disabled(),
                 Textarea::make('message')->columnSpanFull()->disabled(),
+                // Ajout du champ pour l'identifiant temporaire
+                TextInput::make('identifiant_temporaire')->label('Identifiant Temporaire')->disabled(),
                 Select::make('status')
                     ->options([
                         'pending' => 'En attente',
@@ -50,12 +51,13 @@ class PartnerApplicationResource extends Resource
     {
         return $table
             ->columns([
+                TextColumn::make('identifiant_temporaire')->label('ID Temporaire')->searchable()->sortable(),
                 TextColumn::make('nom_entreprise')->label('Entreprise')->searchable(),
                 TextColumn::make('nom_contact')->label('Contact')->searchable(),
                 TextColumn::make('telephone'),
                 TextColumn::make('email'),
                 BadgeColumn::make('status')
-                    ->label('Status')
+                    ->label('Statut')
                     ->colors([
                         'warning' => 'pending',
                         'success' => 'approved',
@@ -66,25 +68,22 @@ class PartnerApplicationResource extends Resource
             ->defaultSort('created_at', 'desc')
             ->actions([
                 Tables\Actions\ViewAction::make(),
-                // Action pour approuver une demande
                 Action::make('approve')
                     ->label('Approuver')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
                     ->requiresConfirmation()
                     ->action(function (PartnerApplication $record) {
-                        // Créer un nouveau client à partir de la demande
                         $client = Client::create([
                             'nom' => $record->nom_entreprise,
                             'email' => $record->email,
                             'telephone' => $record->telephone,
                             'type' => $record->secteur_activite,
                             'status' => 'actif',
-                            'password' => bcrypt(Str::random(12)), // Génère un mot de passe aléatoire
+                            'password' => bcrypt(Str::random(12)),
                             'identifiant_unique_somacif' => 'SOM-' . strtoupper(Str::random(8)),
                         ]);
                         
-                        // Mettre à jour le statut de la demande
                         $record->update(['status' => 'approved']);
 
                         Notification::make()
@@ -92,7 +91,6 @@ class PartnerApplicationResource extends Resource
                             ->body("Le client {$client->nom} a été créé avec succès.")
                             ->success()->send();
                     })
-                    // N'afficher le bouton que si la demande est en attente
                     ->visible(fn (PartnerApplication $record): bool => $record->status === 'pending'),
             ]);
     }
@@ -104,7 +102,6 @@ class PartnerApplicationResource extends Resource
         ];
     }
 
-    // On ne peut pas créer de demande depuis le back-office, elles viennent du site.
     public static function canCreate(): bool
     {
         return false;

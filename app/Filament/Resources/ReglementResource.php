@@ -73,14 +73,13 @@ class ReglementResource extends Resource
                                 if (!$clientId) {
                                     return collect();
                                 }
-                                // On ne propose que les commandes livrées
                                 return Order::query()
                                     ->where('client_id', $clientId)
                                     ->whereIn('statut', ['livree', 'en_cours_livraison'])
                                     ->whereIn('statut_paiement', ['non_payee', 'Partiellement réglé'])
                                     ->get()
                                     ->mapWithKeys(function ($order) {
-                                        return [$order->id => "{$order->numero_commande} - Reste à payer: " . ($order->montant_total - $order->montant_paye) . " FCFA"];
+                                        return [$order->id => "{$order->numero_commande} - Reste à payer: " . number_format($order->montant_total - $order->montant_paye, 0, ',', ' ') . " FCFA"];
                                     });
                             })
                             ->preload()

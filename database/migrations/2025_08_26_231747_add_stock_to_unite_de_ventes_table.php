@@ -11,11 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('unite_de_ventes', function (Blueprint $table) {
-            // CORRECTION : On retire ->after('prix_unitaire') pour simplement
-            // ajouter la colonne à la fin, ce qui évite l'erreur.
-            $table->integer('stock')->default(0);
-        });
+        // Vérifie si la colonne 'stock' existe avant de la créer
+        if (!Schema::hasColumn('unite_de_ventes', 'stock')) {
+            Schema::table('unite_de_ventes', function (Blueprint $table) {
+                $table->integer('stock')->default(0);
+            });
+        }
     }
 
     /**
@@ -23,8 +24,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('unite_de_ventes', function (Blueprint $table) {
-            $table->dropColumn('stock');
-        });
+        // Vérifie si la colonne 'stock' existe avant de la supprimer
+        if (Schema::hasColumn('unite_de_ventes', 'stock')) {
+            Schema::table('unite_de_ventes', function (Blueprint $table) {
+                $table->dropColumn('stock');
+            });
+        }
     }
 };

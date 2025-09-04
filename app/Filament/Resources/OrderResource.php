@@ -25,6 +25,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use App\Services\StockManager;
 
 class OrderResource extends Resource
 {
@@ -39,6 +40,7 @@ class OrderResource extends Resource
             ->schema([
                 Section::make('Détails de la Commande')
                     ->schema([
+                        // ... (champs existants)
                         TextInput::make('numero_commande')
                             ->default('CMD-' . random_int(1000, 9999))
                             ->disabled()
@@ -58,7 +60,7 @@ class OrderResource extends Resource
                         DatePicker::make('created_at')
                             ->label('Date de commande')->default(now())->disabled(),
                     ])->columns(2),
-
+                
                 Section::make('Statut & Livraison')
                     ->schema([
                         Select::make('statut')
@@ -71,10 +73,25 @@ class OrderResource extends Resource
                                 'annulee' => 'Annulée',
                             ])
                             ->required()
-                            ->live() // Indispensable pour la logique conditionnelle
-                            ->default('en_attente'),
-
-                        // LOGIQUE CONDITIONNELLE : Le groupe "Livraison" n'apparaît que si nécessaire.
+                            ->live()
+                            ->default('en_attente')
+                            ->disabled(fn (?Order $record): bool => $record && $record->statut === 'validee')
+                            ->afterStateUpdated(function (Set $set, Get $get, ?Order $record) {
+                                // Ne pas ré-activer les champs si la commande a déjà été validée.
+                                if ($record && $record->statut === 'validee') {
+                                    $set('statut', 'validee');
+                                    return;
+                                }
+                            })
+                            ->rules(function (Get $get, ?Order $record) {
+                                // Règle de validation personnalisée pour le stock
+                                return [
+                                    fn (string $attribute, $value, \Closure $fail) => $value === 'validee' && !$record?->exists ? self::validateStock($get, $fail) : null,
+                                ];
+                            })
+                            ->dehydrated(fn (?string $state): bool => filled($state)),
+                            
+                        // ... (le reste du code du groupe "Livraison" est identique)
                         Group::make()
                             ->schema([
                                 Select::make('livreur_id')
@@ -85,17 +102,17 @@ class OrderResource extends Resource
                                     ->label('Livreur à assigner'),
                             ])
                             ->visible(function (Get $get): bool {
-                                // Le champ livreur est visible à partir du moment où la commande est en préparation.
                                 $status = $get('statut');
                                 return in_array($status, ['en_preparation', 'en_cours_livraison', 'livree']);
                             }),
                     ]),
-
+                
                 Section::make('Articles de la Commande')
                     ->schema([
                         Repeater::make('items')
                             ->relationship()
                             ->schema([
+                                // ... (schéma existant)
                                 Select::make('unite_de_vente_id')
                                     ->relationship('uniteDeVente', 'nom_unite', fn (Builder $query) => $query->whereNotNull('nom_unite'))
                                     ->searchable()->preload()->required()->live()
@@ -110,10 +127,7 @@ class OrderResource extends Resource
                                     ->numeric()->required()->live(onBlur: true),
                                 Placeholder::make('prix_total_ligne')
                                     ->label('Total Ligne')
-                                    ->content(function (Get $get): string {
-                                        $total = ($get('quantite') ?? 0) * ($get('prix_unitaire') ?? 0);
-                                        return number_format($total, 0, ',', ' ') . ' FCFA';
-                                    }),
+                                    ->content(fn (Get $get): string => number_format(($get('quantite') ?? 0) * ($get('prix_unitaire') ?? 0), 0, ',', ' ') . ' FCFA'),
                             ])
                             ->columns(4)
                             ->addActionLabel('Ajouter un article')
@@ -121,7 +135,7 @@ class OrderResource extends Resource
                             ->afterStateUpdated(fn (Get $get, Set $set) => self::updateGrandTotal($get, $set))
                             ->deleteAction(fn (Forms\Components\Actions\Action $action) => $action->after(fn (Get $get, Set $set) => self::updateGrandTotal($get, $set))),
                     ]),
-
+                
                 Section::make('Résumé Financier et Notes')
                     ->schema([
                         TextInput::make('montant_total')
@@ -132,6 +146,42 @@ class OrderResource extends Resource
             ]);
     }
 
+    /**
+     * Valide si le stock est suffisant pour les articles de la commande.
+     */
+    public static function validateStock(Get $get, \Closure $fail): void
+    {
+        $items = $get('items');
+        if (empty($items)) {
+            $fail("La commande ne contient aucun article.");
+            return;
+        }
+
+        $stockManager = app(StockManager::class);
+        $erreurs = [];
+
+        foreach ($items as $item) {
+            $uniteDeVenteId = $item['unite_de_vente_id'] ?? null;
+            $quantiteDemandee = $item['quantite'] ?? 0;
+            
+            if ($uniteDeVenteId && $quantiteDemandee > 0) {
+                $unite = UniteDeVente::find($uniteDeVenteId);
+                $stockDisponible = $stockManager->getInventoryStock($unite, null); // null pour l'entrepôt principal
+                
+                if ($stockDisponible < $quantiteDemandee) {
+                    $erreurs[] = "Stock insuffisant pour l'article '{$unite->nom_unite}' (disponible: {$stockDisponible}, demandé: {$quantiteDemandee})";
+                }
+            }
+        }
+
+        if (!empty($erreurs)) {
+            foreach ($erreurs as $erreur) {
+                $fail($erreur);
+            }
+        }
+    }
+
+    // ... (le reste des méthodes `table`, `updateGrandTotal`, `getRelations`, `getPages` restent identiques)
     public static function table(Table $table): Table
     {
         return $table
@@ -144,7 +194,7 @@ class OrderResource extends Resource
                         'warning' => fn ($state) => in_array($state, ['en_attente', 'en_preparation']),
                         'success' => 'livree',
                         'info' => 'en_cours_livraison',
-                        'primary' => 'validee', // J'ai ajouté une couleur pour 'validée'
+                        'primary' => 'validee', 
                         'danger' => 'annulee',
                     ])->sortable(),
                 BadgeColumn::make('statut_paiement')

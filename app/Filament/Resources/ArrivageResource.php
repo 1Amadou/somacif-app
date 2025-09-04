@@ -20,6 +20,7 @@ use Filament\Tables;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use App\Filament\Resources\PointDeVenteResource;
 
 class ArrivageResource extends Resource
 {
@@ -37,12 +38,7 @@ class ArrivageResource extends Resource
                     ->description('Détails principaux de la réception de marchandise.')
                     ->schema([
                         Select::make('fournisseur_id')
-                            ->relationship(
-                                name: 'fournisseur',
-                                titleAttribute: 'nom_entreprise',
-                                // ROBUSTESSE : Ignore les fournisseurs sans nom pour éviter les erreurs.
-                                modifyQueryUsing: fn (Builder $query) => $query->whereNotNull('nom_entreprise')
-                            )
+                            ->relationship('fournisseur', 'nom_entreprise')
                             ->searchable()
                             ->preload()
                             ->required()
@@ -50,6 +46,7 @@ class ArrivageResource extends Resource
                         
                         TextInput::make('numero_bon_livraison')
                             ->required()
+                            ->unique(ignoreRecord: true) // Ajout de l'unicité
                             ->maxLength(255)
                             ->label('Numéro du Bon de Livraison'),
 
@@ -57,7 +54,7 @@ class ArrivageResource extends Resource
                             ->required()
                             ->default(now())
                             ->label('Date de l\'arrivage'),
-                    ])->columns(2),
+                    ])->columns(3), // On passe à 3 colonnes pour une meilleure lisibilité
 
                 Section::make('Détails des Produits Reçus')
                     ->schema([
@@ -69,33 +66,46 @@ class ArrivageResource extends Resource
                                     ->options(UniteDeVente::query()->pluck('nom_unite', 'id'))
                                     ->searchable()
                                     ->required()
-                                    // ROBUSTESSE : On s'assure que l'option sélectionnée est valide.
-                                    ->exists('unite_de_ventes', 'id'),
-
+                                    ->exists('unite_de_ventes', 'id')
+                                    ->live(onBlur: true),
+                                
                                 TextInput::make('quantite')
-                                    ->label('Quantité (en cartons/unités)')
+                                    ->label('Quantité (en unités)')
                                     ->numeric()
                                     ->required()
                                     ->minValue(1)
-                                    ->live(onBlur: true), // 'live' met à jour les calculs en temps réel
+                                    ->live(onBlur: true),
+                                
+                                TextInput::make('prix_achat_unitaire') // <-- NOUVEAU CHAMP
+                                    ->label('Prix d\'Achat Unitaire')
+                                    ->prefix('FCFA')
+                                    ->numeric()
+                                    ->required()
+                                    ->live(onBlur: true), // 'live' pour les calculs en temps réel
                             ])
+                            ->columns(3) // Changement ici aussi
                             ->addActionLabel('Ajouter un produit')
-                            ->columns(2)
-                            // Calcul automatique du total
                             ->afterStateUpdated(function (Get $get, Set $set) {
                                 self::updateTotals($get, $set);
                             })
                             ->deleteAction(
                                 fn (Forms\Components\Actions\Action $action) => $action->after(fn (Get $get, Set $set) => self::updateTotals($get, $set)),
                             )
-                            ->reorderable(false)
+                            ->reorderable(true) // Rendre le repeater ordonnable
                             ->collapsible(),
                     ]),
                 
                 Section::make('Résumé et Notes')
                     ->schema([
-                        // CHAMP CALCULE : Affiche le total des cartons pour vérification.
-                        TextInput::make('total_quantite')
+                        TextInput::make('montant_total_arrivage') // <-- NOUVEAU CHAMP
+                            ->label('Montant Total de l\'Arrivage')
+                            ->prefix('FCFA')
+                            ->numeric()
+                            ->readOnly()
+                            ->default(0)
+                            ->dehydrated(true), // Assurez-vous que la valeur est sauvegardée
+                        
+                        TextInput::make('total_quantite') // Ancien champ renommé pour plus de clarté
                             ->label('Quantité Totale Reçue')
                             ->numeric()
                             ->readOnly()
@@ -107,6 +117,26 @@ class ArrivageResource extends Resource
             ]);
     }
 
+    public static function updateTotals(Get $get, Set $set): void
+    {
+        $details = $get('details_produits');
+        $totalQuantite = 0;
+        $montantTotal = 0; // <-- NOUVEAU
+
+        if (is_array($details)) {
+            foreach ($details as $item) {
+                $quantite = $item['quantite'] ?? 0;
+                $prixAchat = $item['prix_achat_unitaire'] ?? 0;
+                
+                $totalQuantite += $quantite;
+                $montantTotal += $quantite * $prixAchat; // Calcul du montant total
+            }
+        }
+        $set('total_quantite', $totalQuantite);
+        $set('montant_total_arrivage', $montantTotal);
+    }
+    
+    // ... (Le reste des méthodes `table`, `getRelations`, `getPages` restent identiques)
     public static function table(Table $table): Table
     {
         return $table
@@ -122,12 +152,14 @@ class ArrivageResource extends Resource
                     ->date('d/m/Y')
                     ->sortable()
                     ->label('Date'),
-                // CLARTE : Affiche le nombre total de cartons directement dans la table.
-                TextColumn::make('total_cartons')
-                    ->label('Quantité Totale')
-                    ->state(function (Arrivage $record): int {
-                        return collect($record->details_produits)->sum('quantite');
-                    }),
+                TextColumn::make('montant_total_arrivage') // <-- NOUVEAU
+                    ->label('Coût Total')
+                    ->money('XOF')
+                    ->sortable(),
+                TextColumn::make('total_quantite') // Ancien champ renommé
+                    ->label('Qté Totale')
+                    ->sortable()
+                    ->default('N/A'),
                 TextColumn::make('user.name')
                     ->label('Enregistré par')
                     ->sortable(),
@@ -146,19 +178,6 @@ class ArrivageResource extends Resource
             ]);
     }
 
-    // FONCTION UTILITAIRE : Centralise le calcul du total.
-    public static function updateTotals(Get $get, Set $set): void
-    {
-        $details = $get('details_produits');
-        $totalQuantite = 0;
-
-        if (is_array($details)) {
-            $totalQuantite = collect($details)->pluck('quantite')->sum();
-        }
-
-        $set('total_quantite', $totalQuantite);
-    }
-    
     public static function getRelations(): array
     {
         return [
@@ -174,5 +193,5 @@ class ArrivageResource extends Resource
             'edit' => Pages\EditArrivage::route('/{record}/edit'),
             'view' => Pages\ViewArrivage::route('/{record}'),
         ];
-    }    
+    }
 }

@@ -11,9 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('unite_de_ventes', function (Blueprint $table) {
-            $table->string('calibre')->after('nom_unite');
-        });
+        // On vérifie d'abord si la colonne existe déjà
+        if (!Schema::hasColumn('unite_de_ventes', 'calibre')) {
+            Schema::table('unite_de_ventes', function (Blueprint $table) {
+                $table->string('calibre')->after('nom_unite');
+            });
+        }
     }
 
     /**
@@ -21,8 +24,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('unite_de_ventes', function (Blueprint $table) {
-            $table->dropColumn('calibre');
-        });
+        // De même, on vérifie avant de supprimer
+        if (Schema::hasColumn('unite_de_ventes', 'calibre')) {
+            Schema::table('unite_de_ventes', function (Blueprint $table) {
+                $table->dropColumn('calibre');
+            });
+        }
     }
 };

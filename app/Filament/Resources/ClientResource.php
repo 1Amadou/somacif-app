@@ -3,7 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ClientResource\Pages;
-use App\Filament\Resources\ClientResource\RelationManagers; // S'assurer que cette ligne est présente
+use App\Filament\Resources\ClientResource\RelationManagers;
 use App\Models\Client;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -26,15 +26,25 @@ class ClientResource extends Resource
             ->schema([
                 Forms\Components\Section::make('Informations Générales')
                     ->schema([
-                        Forms\Components\TextInput::make('nom')->required()->maxLength(255),
+                        Forms\Components\TextInput::make('nom')
+                            ->required()
+                            ->maxLength(255),
                         Forms\Components\Select::make('type')
                             ->options([
                                 'Grossiste' => 'Grossiste',
                                 'Hôtel/Restaurant' => 'Hôtel/Restaurant',
                                 'Particulier' => 'Particulier',
-                            ])->required(),
-                        Forms\Components\TextInput::make('telephone')->tel()->required(),
-                        Forms\Components\TextInput::make('email')->email()->maxLength(255),
+                            ])
+                            ->required(),
+                        Forms\Components\TextInput::make('telephone')
+                            ->tel()
+                            ->required()
+                            ->unique(ignoreRecord: true), // Ajout de la validation unique
+                        Forms\Components\TextInput::make('email')
+                            ->email()
+                            ->maxLength(255)
+                            ->unique(ignoreRecord: true) // Ajout de la validation unique
+                            ->nullable(), // Permet de ne pas avoir d'email
                     ])->columns(2),
 
                 Forms\Components\Section::make('Informations de Connexion (Portail Client)')
@@ -45,15 +55,12 @@ class ClientResource extends Resource
                             ->dehydrated(fn ($state) => filled($state))
                             ->default(fn () => 'SOM-' . Str::upper(Str::random(8))),
                         Forms\Components\TextInput::make('password')
-                            ->label('Nouveau Mot de Passe')
+                            ->label('Mot de passe') // Renommé le label pour plus de clarté
                             ->password()
-                            ->dehydrateStateUsing(fn ($state) => Hash::make($state))
+                            ->dehydrateStateUsing(fn ($state) => filled($state) ? Hash::make($state) : null) // Gère les cas où le champ est vide
                             ->dehydrated(fn ($state) => filled($state))
                             ->required(fn (string $context): bool => $context === 'create'),
                     ])->columns(2),
-                
-                // La section "Points de Vente Associés" a été supprimée d'ici
-                // Elle est maintenant gérée par le RelationManager ci-dessous
             ]);
     }
 
@@ -61,12 +68,20 @@ class ClientResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('nom')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('identifiant_unique_somacif')->label('ID Unique')->searchable(),
-                // Cette colonne compte maintenant le nombre de points de vente
-                Tables\Columns\TextColumn::make('pointsDeVente_count')->counts('pointsDeVente')->label('Points de Vente')->badge(),
-                Tables\Columns\TextColumn::make('type')->badge(),
+                Tables\Columns\TextColumn::make('nom')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('identifiant_unique_somacif')
+                    ->label('ID Unique')
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('pointsDeVente_count')
+                    ->counts('pointsDeVente')
+                    ->label('Points de Vente')
+                    ->badge(),
+                Tables\Columns\TextColumn::make('type')
+                    ->badge(),
                 Tables\Columns\TextColumn::make('telephone'),
+                Tables\Columns\TextColumn::make('email'), // Ajout de la colonne email
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -77,7 +92,6 @@ class ClientResource extends Resource
     public static function getRelations(): array
     {
         return [
-            // ON ACTIVE NOS RELATION MANAGERS ICI
             RelationManagers\PointsDeVenteRelationManager::class,
             RelationManagers\OrdersRelationManager::class,
             RelationManagers\ReglementsRelationManager::class,

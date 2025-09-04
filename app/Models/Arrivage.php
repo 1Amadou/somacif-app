@@ -18,6 +18,7 @@ class Arrivage extends Model
         'notes',
         'user_id',          // Qui a enregistré l'arrivage
         'decharge_signee_path',
+        
     ];
 
     protected $casts = [
