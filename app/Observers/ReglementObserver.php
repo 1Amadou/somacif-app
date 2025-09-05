@@ -2,11 +2,9 @@
 
 namespace App\Observers;
 
-use App\Models\Order;
 use App\Models\Reglement;
 use App\Services\StockManager;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 class ReglementObserver
 {
@@ -19,25 +17,28 @@ class ReglementObserver
 
     public function created(Reglement $reglement): void
     {
-        // On s'assure que le traitement se fait dans une transaction atomique
         DB::transaction(function () use ($reglement) {
-            $reglement->load('orders');
+            $reglement->load('order.pointDeVente', 'details.uniteDeVente', 'imputedOrders');
             
-            // On met à jour le statut de paiement pour chaque commande liée au règlement
-            foreach ($reglement->orders as $order) {
-                if ($order->client_id !== $reglement->client_id) {
-                    throw new \Exception("Le règlement concerne une commande d'un autre client.");
+            // --- LOGIQUE DE DÉSTOCKAGE ---
+            if ($reglement->order) { // S'assure qu'une commande est liée
+                $pointDeVente = $reglement->order->pointDeVente;
+                foreach ($reglement->details as $detail) {
+                    $this->stockManager->decreaseInventoryStock(
+                        $detail->uniteDeVente,
+                        $detail->quantite_vendue,
+                        $pointDeVente
+                    );
                 }
+            }
+            
+            // --- LOGIQUE DE PAIEMENT ---
+            // Met à jour la commande principale
+            $reglement->order?->updatePaymentStatus();
+            // Met aussi à jour les autres commandes sur lesquelles le paiement a été imputé
+            foreach ($reglement->imputedOrders as $order) {
                 $order->updatePaymentStatus();
             }
         });
-    }
-
-    public function updated(Reglement $reglement): void
-    {
-        // Si les commandes liées au règlement changent, on met à jour les statuts
-        if ($reglement->isDirty('orders')) {
-            $this->created($reglement);
-        }
     }
 }

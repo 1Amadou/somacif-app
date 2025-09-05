@@ -2,19 +2,26 @@
 
 namespace App\Filament\Resources\PointDeVenteResource\RelationManagers;
 
-use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
-use App\Filament\Resources\ProductResource; // Pour le lien
+use App\Filament\Resources\ProductResource;
+use App\Models\Inventory; // Ajout pour le typage
+use Illuminate\Database\Eloquent\Builder;
 
 class InventoryRelationManager extends RelationManager
 {
-    protected static string $relationship = 'inventory';
+    // --- CORRECTION N°1 : Le nom de la relation doit être au pluriel ---
+    protected static string $relationship = 'inventories';
+    
     protected static ?string $recordTitleAttribute = 'id';
     protected static ?string $title = 'Stock Actuel du Point de Vente';
 
+    public function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->where('quantite_stock', '>', 0);
+    }
 
     public function table(Table $table): Table
     {
@@ -24,30 +31,28 @@ class InventoryRelationManager extends RelationManager
                     ->label('Produit (Unité / Calibre)')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('quantite')
-                    ->label('Quantité en Stock (Cartons)')
+                
+                // --- CORRECTION N°2 : Le nom de la colonne est 'quantite_stock' ---
+                Tables\Columns\TextColumn::make('quantite_stock')
+                    ->label('Quantité en Stock')
                     ->numeric()
-                    ->sortable(),
+                    ->sortable()
+                    ->badge(),
             ])
-            ->filters([
-                // Tu pourras ajouter des filtres ici plus tard si besoin
-            ])
-            ->headerActions([
-                // Aucune action de création, le stock est géré automatiquement
-            ])
+            ->filters([])
+            ->headerActions([]) // Aucune action de création, le stock est géré par les transferts
             ->actions([
-                // Action pour voir la fiche produit complète
                 Tables\Actions\Action::make('voir_produit')
                     ->label('Voir la Fiche Produit')
                     ->icon('heroicon-o-archive-box')
-                    ->url(fn ($record): string => ProductResource::getUrl('edit', ['record' => $record->uniteDeVente->product_id]))
+                    ->url(fn (Inventory $record): string => ProductResource::getUrl('edit', ['record' => $record->uniteDeVente->product_id]))
                     ->openUrlInNewTab(),
             ]);
     }
 
-    // On désactive la possibilité de modifier ou lier des stocks manuellement
-    public function isReadOnly(): bool
+    // Le formulaire n'est pas nécessaire car cette table est en lecture seule.
+    public function form(Form $form): Form
     {
-        return true;
+        return $form->schema([]);
     }
 }

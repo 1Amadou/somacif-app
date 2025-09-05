@@ -62,19 +62,11 @@ class ProductResource extends Resource
                             ->default(true),
                         Forms\Components\FileUpload::make('image_principale')
                             ->label('Image Principale')
-                            ->image()
-                            ->imageEditor()
-                            ->disk('public')
-                            ->directory('products')
+                            ->image()->imageEditor()->disk('public')->directory('products')
                             ->nullable(),
                         Forms\Components\FileUpload::make('images_galerie')
                             ->label('Galerie d\'images')
-                            ->multiple()
-                            ->image()
-                            ->imageEditor()
-                            ->disk('public')
-                            ->directory('products')
-                            ->reorderable()
+                            ->multiple()->image()->imageEditor()->disk('public')->directory('products')->reorderable()
                             ->nullable(),
                     ]),
                     Forms\Components\Section::make('SEO')->schema([
@@ -92,9 +84,11 @@ class ProductResource extends Resource
                 Tables\Columns\ImageColumn::make('image_principale')->label('Image'),
                 Tables\Columns\TextColumn::make('nom')->searchable()->sortable(),
                 Tables\Columns\IconColumn::make('is_visible')->label('Visibilité')->boolean(),
-                Tables\Columns\TextColumn::make('uniteDeVentes_count')->counts('uniteDeVentes')->label('Calibres'),
+                Tables\Columns\TextColumn::make('uniteDeVentes_count')->counts('uniteDeVentes')->label('Unités de Vente'),
+                
+                // Le calcul du stock total reste valide car il somme les stocks de toutes les unités de vente
                 Tables\Columns\TextColumn::make('stock_total')
-                    ->label('Stock Total')
+                    ->label('Stock Total (Entrepôt Principal)')
                     ->state(function (Model $record): string {
                         $stock = $record->uniteDeVentes()->withSum('inventories', 'quantite_stock')->get()->sum('inventories_sum_quantite_stock');
                         return number_format($stock, 0, '', ' ');

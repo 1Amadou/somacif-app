@@ -7,12 +7,11 @@ use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class UniteDeVentesRelationManager extends RelationManager
 {
     protected static string $relationship = 'uniteDeVentes';
+    protected static ?string $title = 'Unités de Vente (Calibres, Conditionnements)';
 
     public function form(Form $form): Form
     {
@@ -20,33 +19,30 @@ class UniteDeVentesRelationManager extends RelationManager
             ->schema([
                 Forms\Components\TextInput::make('nom_unite')
                     ->label('Nom de l\'unité (ex: Carton, Sachet)')
-                    ->required()
-                    ->maxLength(255),
+                    ->required()->maxLength(255),
                 
                 Forms\Components\TextInput::make('calibre')
                     ->label('Calibre (ex: Moyen, 100-200g)')
-                    ->required()
-                    ->maxLength(255),
+                    ->required()->maxLength(255),
 
-                // CHAMP VERROUILLÉ
-                Forms\Components\TextInput::make('stock')
+                // Le stock reste non-éditable, ce qui est correct
+                Forms\Components\TextInput::make('stock_principal')
                     ->label('Stock Principal Actuel')
                     ->numeric()
-                    ->readOnly() // Le stock ne peut plus être modifié manuellement
+                    ->readOnly()
                     ->helperText('Le stock est mis à jour automatiquement par les arrivages.'),
 
-                Forms\Components\Fieldset::make('Grille Tarifaire')
+                Forms\Components\Fieldset::make('Grille Tarifaire (FCFA)')
                     ->schema([
-                        Forms\Components\TextInput::make('prix_unitaire')
+                        Forms\Components\TextInput::make('prix_particulier')
                             ->label('Prix Particulier')
-                            ->required()
-                            ->numeric(),
+                            ->required()->numeric(),
                         Forms\Components\TextInput::make('prix_grossiste')
                             ->label('Prix Grossiste')
-                            ->numeric(),
+                            ->numeric()->nullable(),
                         Forms\Components\TextInput::make('prix_hotel_restaurant')
                             ->label('Prix Hôtel/Restaurant')
-                            ->numeric(),
+                            ->numeric()->nullable(),
                     ])->columns(3),
             ]);
     }
@@ -54,16 +50,19 @@ class UniteDeVentesRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            ->recordTitleAttribute('nom_unite')
+            // CORRECTION : On utilise `nom_complet` pour le titre du record
+            ->recordTitleAttribute('nom_complet')
             ->columns([
-                Tables\Columns\TextColumn::make('nom_unite'),
+                // CORRECTION : On affiche le nom de l'unité et le calibre
+                Tables\Columns\TextColumn::make('nom_unite')->label('Unité'),
                 Tables\Columns\TextColumn::make('calibre'),
-                Tables\Columns\TextColumn::make('stock')
+
+                Tables\Columns\TextColumn::make('stock_principal')
                     ->label('Stock Principal')
-                    ->badge()
-                    ->color('primary'),
-                Tables\Columns\TextColumn::make('prix_unitaire')
-                    ->label('Prix Particulier'),
+                    ->badge()->color('primary'),
+                
+                Tables\Columns\TextColumn::make('prix_particulier')
+                    ->label('Prix Particulier')->money('XOF'),
             ])
             ->filters([
                 //

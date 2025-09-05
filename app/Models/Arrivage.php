@@ -18,7 +18,8 @@ class Arrivage extends Model
         'notes',
         'user_id',          // Qui a enregistré l'arrivage
         'decharge_signee_path',
-        
+        'montant_total_arrivage', // Ajout pour la cohérence
+        'total_quantite',         // Ajout pour la cohérence
     ];
 
     protected $casts = [

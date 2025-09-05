@@ -16,13 +16,15 @@ class MagicLogin extends Component
     public ?string $code = '';
     public bool $codeSent = false;
     public ?string $userType = null;
-    public $userToVerify = null;
 
-    // --- NOUVEAUX ATTRIBUTS POUR LA GESTION DU TEMPS ---
+    // Persiste l'utilisateur trouvé entre les étapes pour ne pas avoir à le rechercher à nouveau
+    public ?int $userIdToVerify = null; 
+
+    // Gestion du temps pour le renvoi du code
     public int $cooldown = 0;
-    protected $cooldownDuration = 60; // Durée du cooldown en secondes
+    protected $cooldownDuration = 60; // en secondes
 
-    // Méthode pour incrémenter le temps et réactiver le bouton
+    // Décrémente le cooldown chaque seconde
     public function tick(): void
     {
         if ($this->cooldown > 0) {
@@ -30,48 +32,51 @@ class MagicLogin extends Component
         }
     }
 
-    // Étape 1 : L'utilisateur entre son identifiant/email
+    // Étape 1 : L'utilisateur entre son identifiant/email et demande un code
     public function sendCode(): void
     {
-        // Réinitialiser le cooldown si on renvoie le code
-        $this->cooldown = $this->cooldownDuration;
-        
         $this->validate(['identifier' => 'required']);
 
         $user = Client::where('email', $this->identifier)
                       ->orWhere('identifiant_unique_somacif', $this->identifier)
                       ->first();
         
-        if (!$user) {
+        if ($user) {
+            $this->userType = 'client';
+        } else {
             $user = Livreur::where('email', $this->identifier)->first();
             $this->userType = 'livreur';
-        } else {
-            $this->userType = 'client';
         }
 
         if ($user) {
             $sentCode = $user->generateVerificationCode();
             $user->notify(new MagicLoginCodeNotification($sentCode));
 
-            $this->userToVerify = $user;
+            $this->userIdToVerify = $user->id; // On stocke l'ID de l'utilisateur
             $this->codeSent = true;
-            Notification::make()->title('Code envoyé !')->body('Un code de vérification a été envoyé à votre adresse email.')->success()->send();
+            $this->cooldown = $this->cooldownDuration; // On active le cooldown
+            Notification::make()->title('Code envoyé !')->body('Un code de vérification a été envoyé. Veuillez vérifier vos e-mails.')->success()->send();
         } else {
             $this->addError('identifier', 'Aucun compte trouvé pour cet identifiant.');
         }
     }
 
-    // Étape 2 : L'utilisateur entre le code reçu
-    public function verifyCode(): void
+    // Étape 2 : L'utilisateur entre le code reçu pour se connecter
+    public function login(): void
     {
-        $this->validate(['code' => 'required|numeric']);
+        $this->validate(['code' => 'required|numeric|digits:6']);
 
-        $user = $this->userToVerify;
+        $userModel = $this->userType === 'client' ? Client::class : Livreur::class;
+        $user = $userModel::find($this->userIdToVerify);
         
         if ($user && Hash::check($this->code, $user->verification_code) && now()->lessThan($user->verification_code_expires_at)) {
             $guard = $this->userType;
-            Auth::guard($guard)->login($user, true);
-            $user->update(['verification_code' => null, 'verification_code_expires_at' => null]);
+            Auth::guard($guard)->login($user, true); // Le "true" active le "Se souvenir de moi"
+            
+            $user->forceFill([
+                'verification_code' => null,
+                'verification_code_expires_at' => null
+            ])->save();
             
             $redirectRoute = ($guard === 'client') ? 'client.dashboard' : 'livreur.dashboard';
             $this->redirect(route($redirectRoute), navigate: true);
@@ -82,6 +87,8 @@ class MagicLogin extends Component
 
     public function render()
     {
-        return view('livewire.auth.magic-login')->layout('components.layouts.auth');
+        // On indique à la vue d'utiliser le layout 'auth' qui contient les styles
+        return view('livewire.auth.magic-login')
+               ->layout('components.layouts.auth');
     }
 }

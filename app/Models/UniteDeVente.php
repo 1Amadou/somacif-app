@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Services\StockManager; // Ajout pour utiliser le service de stock
 
 class UniteDeVente extends Model
 {
@@ -14,28 +15,33 @@ class UniteDeVente extends Model
     protected $fillable = [
         'product_id',
         'nom_unite',
-        'prix_unitaire',
-        // 'stock', // On enlève cette ligne
         'calibre',
+        'prix_particulier',
         'prix_grossiste',
         'prix_hotel_restaurant',
-        'prix_particulier',
     ];
 
     /**
-     * Accesseur pour calculer le stock total à partir des inventaires.
-     * @return int|float
+     * Accesseur pour obtenir le stock de l'entrepôt principal.
+     * C'est le stock de référence pour les nouvelles commandes.
      */
-    public function getStockAttribute()
+    public function getStockPrincipalAttribute(): float
     {
-        return $this->inventories()->sum('quantite_stock');
+        $stockManager = app(StockManager::class);
+        return $stockManager->getInventoryStock($this, null); // null représente l'entrepôt principal
     }
 
+    /**
+     * CORRIGÉ : Accesseur pour le nom complet, robuste et clair.
+     * Format : "NomProduit (NomUnité, Calibre)"
+     */
     public function getNomCompletAttribute(): string
     {
-        $productName = $this->product->nom ?? '[PRODUIT MANQUANT]';
+        $productName = $this->product->nom ?? 'Produit Inconnu';
+        $uniteName = $this->nom_unite ?? 'N/A';
+        $calibre = $this->calibre ?? 'N/A';
 
-        return "{$productName} - {$this->calibre} ({$this->nom_unite})";
+        return "{$productName} ({$uniteName}, {$calibre})";
     }
 
     public function product(): BelongsTo

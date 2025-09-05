@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Client;
 
+use App\Enums\OrderStatusEnum; // <-- AJOUT : On importe notre dictionnaire
 use App\Models\Order;
 use App\Models\OrderItem;
 use Illuminate\Support\Facades\Auth;
@@ -15,8 +16,8 @@ class EditOrderPage extends Component
 
     public function mount(Order $order)
     {
-        // Sécurité : le client doit être le propriétaire ET la commande doit être modifiable
-        if ($order->client_id !== Auth::guard('client')->id() || $order->statut !== 'en_attente') {
+        // CORRECTION : On utilise notre Enum pour une vérification robuste
+        if ($order->client_id !== Auth::guard('client')->id() || $order->statut !== OrderStatusEnum::EN_ATTENTE) {
             session()->flash('error', 'Cette commande ne peut plus être modifiée.');
             return redirect()->route('client.dashboard');
         }

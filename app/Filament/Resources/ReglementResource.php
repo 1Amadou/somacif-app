@@ -3,88 +3,186 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ReglementResource\Pages;
-use App\Models\Client;
 use App\Models\Order;
 use App\Models\Reglement;
+use App\Models\UniteDeVente;
 use Filament\Forms;
-use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\Section;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Columns\BadgeColumn;
-use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\Rule;
 
 class ReglementResource extends Resource
 {
     protected static ?string $model = Reglement::class;
-
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
     protected static ?string $navigationGroup = 'Ventes & Commandes';
-    protected static ?int $navigationSort = 2;
     protected static ?string $label = 'Règlement Client';
-    protected static ?string $pluralLabel = 'Règlements Clients';
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Section::make('Informations du Règlement')
+                Forms\Components\Section::make('Informations Générales')
                     ->schema([
-                        Select::make('client_id')
-                            ->relationship('client', 'nom', fn (Builder $query) => $query->whereNotNull('nom'))
+                        Forms\Components\Select::make('client_id')
+                            ->relationship('client', 'nom')
                             ->searchable()
                             ->preload()
                             ->required()
                             ->live()
-                            ->afterStateUpdated(fn (Set $set) => $set('orders', []))
-                            ->label('Client'),
-                        DatePicker::make('date_reglement')
+                            ->afterStateUpdated(fn (Set $set) => $set('order_id', null)),
+
+                        Forms\Components\Select::make('order_id')
+                            ->label('Commande Concernée par le Règlement')
+                            ->options(function (Get $get, ?Reglement $record): Collection {
+                                $clientId = $get('client_id') ?? $record?->client_id;
+                                if (!$clientId) return collect();
+                                return Order::query()
+                                    ->where('client_id', $clientId)
+                                    ->where('statut', '!=', 'annulee')
+                                    ->with('pointDeVente')
+                                    ->get()
+                                    ->mapWithKeys(fn ($order) => [$order->id => $order->numero_commande . ' (' . $order->pointDeVente->nom . ')']);
+                            })
+                            ->searchable()
+                            ->live()
                             ->required()
-                            ->default(now())
-                            ->label('Date du règlement'),
-                        TextInput::make('montant_verse')
+                            ->afterStateUpdated(function (Set $set, $state) {
+                                $order = Order::find($state);
+                                if ($order) {
+                                    $set('details', []);
+                                    $set('montant_calcule', 0);
+                                }
+                            }),
+                        
+                        Forms\Components\DatePicker::make('date_reglement')
+                            ->required()
+                            ->default(now()),
+                            
+                        // **CORRECTION : AJOUT DE LA RÈGLE DE VALIDATION**
+                        Forms\Components\TextInput::make('montant_verse')
                             ->numeric()
                             ->required()
                             ->prefix('FCFA')
-                            ->label('Montant Versé'),
-                        Textarea::make('notes')
-                            ->columnSpanFull(),
+                            ->label('Montant Versé par le Client')
+                            ->live(onBlur: true) // Validation en direct
+                            ->rules([
+                                fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                    $montantCalcule = $get('montant_calcule');
+                                    if ($value != $montantCalcule) {
+                                        $fail("Le montant versé doit être identique au montant total des ventes déclarées ({$montantCalcule} FCFA).");
+                                    }
+                                },
+                            ]),
+
+                        Forms\Components\Select::make('methode_paiement')
+                            ->options(['especes' => 'Espèces', 'cheque' => 'Chèque', 'virement' => 'Virement', 'autre' => 'Autre'])
+                            ->required(),
                     ])->columns(2),
-                
-                Section::make('Commandes Associées')
-                    ->description('Sélectionnez les commandes que ce règlement concerne.')
-                    ->collapsible()
+
+                Forms\Components\Section::make('Détail des Ventes (pour le déstockage)')
+                    ->description("Ajoutez une ligne pour chaque lot de produit vendu, même si c'est le même produit à un prix différent.")
                     ->schema([
-                        Select::make('orders')
-                            ->label('Commandes à Régler')
-                            ->multiple()
-                            ->relationship('orders', 'numero_commande')
-                            ->options(function (Get $get): Collection {
-                                $clientId = $get('client_id');
-                                if (!$clientId) {
-                                    return collect();
-                                }
-                                return Order::query()
-                                    ->where('client_id', $clientId)
-                                    ->whereIn('statut', ['livree', 'en_cours_livraison'])
-                                    ->whereIn('statut_paiement', ['non_payee', 'Partiellement réglé'])
-                                    ->get()
-                                    ->mapWithKeys(function ($order) {
-                                        return [$order->id => "{$order->numero_commande} - Reste à payer: " . number_format($order->montant_total - $order->montant_paye, 0, ',', ' ') . " FCFA"];
-                                    });
-                            })
-                            ->preload()
-                            ->live(),
-                    ]),
+                        Forms\Components\Repeater::make('details')
+                            ->schema([
+                                Forms\Components\Select::make('unite_de_vente_id')
+                                    ->label('Article Vendu')
+                                    ->options(function (Get $get, ?Reglement $record): array {
+                                        $orderId = $get('../../order_id') ?? $record?->order_id;
+                                        if (!$orderId) return [];
+                                        
+                                        $order = Order::with('items.uniteDeVente.product')->find($orderId);
+                                        return $order->items
+                                            ->filter(fn ($item) => $item->uniteDeVente !== null && $item->uniteDeVente->nom_complet !== null)
+                                            ->pluck('uniteDeVente.nom_complet', 'unite_de_vente_id')
+                                            ->toArray();
+                                    })
+                                    ->required()
+                                    ->searchable(),
+                                
+                                Forms\Components\TextInput::make('quantite_vendue')
+                                    ->numeric()
+                                    ->required()
+                                    ->label('Qté Vendue')
+                                    ->live(onBlur: true)
+                                    ->suffix(function (Get $get, $record) {
+                                        $orderId = $get('../../order_id');
+                                        $uniteDeVenteId = $get('unite_de_vente_id');
+                                        if (!$orderId || !$uniteDeVenteId) return '';
+                                        $orderItem = Order::find($orderId)->items()->where('unite_de_vente_id', $uniteDeVenteId)->first();
+                                        $quantiteCommandee = $orderItem ? $orderItem->quantite : 0;
+                                        return " / " . $quantiteCommandee;
+                                    })
+                                    ->rules([
+                                        fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                            $orderId = $get('../../order_id');
+                                            $uniteDeVenteId = $get('unite_de_vente_id');
+
+                                            if (!$orderId || !$uniteDeVenteId || is_null($value)) return;
+                                            
+                                            $orderItem = Order::find($orderId)->items()->where('unite_de_vente_id', $uniteDeVenteId)->first();
+                                            
+                                            if ($orderItem && $value > $orderItem->quantite) {
+                                                $fail("La quantité saisie ({$value}) est supérieure à la quantité commandée pour cet article ({$orderItem->quantite}).");
+                                            }
+                                        },
+                                    ]),
+                                
+                                Forms\Components\TextInput::make('prix_de_vente_unitaire')
+                                    ->numeric()
+                                    ->required()
+                                    ->label('Prix de Vente Unitaire')
+                                    ->live(onBlur: true),
+                            ])
+                            ->columns(3)
+                            ->addActionLabel('Ajouter une ligne de vente')
+                            ->live()
+                            ->afterStateUpdated(fn (Get $get, Set $set) => self::updateMontantCalcule($get, $set))
+                            ->deleteAction(fn (Forms\Components\Actions\Action $action) => $action->after(fn (Get $get, Set $set) => self::updateMontantCalcule($get, $set))),
+                            
+                        Forms\Components\TextInput::make('montant_calcule')
+                            ->numeric()
+                            ->readOnly()
+                            ->prefix('FCFA')
+                            ->label('Montant Total des Ventes Déclarées'),
+                    ])->hidden(fn (Get $get, ?Reglement $record) => !$get('order_id') && !$record?->order_id),
+            ]);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Infolists\Components\Section::make('Informations Générales')->schema([
+                    Infolists\Components\TextEntry::make('client.nom'),
+                    Infolists\Components\TextEntry::make('order.numero_commande')->label('Commande Concernée'),
+                    Infolists\Components\TextEntry::make('date_reglement')->date('d/m/Y'),
+                    Infolists\Components\TextEntry::make('montant_verse')->money('XOF'),
+                    Infolists\Components\TextEntry::make('methode_paiement')->badge(),
+                    Infolists\Components\TextEntry::make('user.name')->label('Enregistré par'),
+                ])->columns(3),
+                Infolists\Components\Section::make('Détail des Ventes Enregistrées')->schema([
+                    Infolists\Components\RepeatableEntry::make('details')
+                        ->schema([
+                            Infolists\Components\TextEntry::make('unite_de_vente_id')
+                                ->label('Article')
+                                ->formatStateUsing(function ($state) {
+                                    $unite = UniteDeVente::find($state);
+                                    return $unite ? $unite->nom_complet : 'Article Inconnu';
+                                })
+                                ->columnSpan(2),
+                            Infolists\Components\TextEntry::make('quantite_vendue')->label('Qté Vendue'),
+                            Infolists\Components\TextEntry::make('prix_de_vente_unitaire')->label('Prix de Vente')->money('XOF'),
+                        ])->columns(4)->label(''),
+                ]),
             ]);
     }
 
@@ -92,38 +190,38 @@ class ReglementResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('client.nom')->searchable()->sortable(),
-                TextColumn::make('date_reglement')->date('d/m/Y')->sortable(),
-                TextColumn::make('montant_verse')->money('XOF')->sortable(),
-                TextColumn::make('orders.numero_commande')
-                    ->badge()
-                    ->label('Commandes Réglées'),
-                TextColumn::make('methode_paiement')->searchable()->sortable(),
-                TextColumn::make('user.name')->label('Enregistré par')->sortable(),
+                Tables\Columns\TextColumn::make('client.nom')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('date_reglement')->date('d/m/Y')->sortable(),
+                Tables\Columns\TextColumn::make('montant_verse')->money('XOF')->sortable(),
+                Tables\Columns\TextColumn::make('montant_calcule')->money('XOF')->sortable(),
+                Tables\Columns\TextColumn::make('order.numero_commande')->badge(),
+                Tables\Columns\TextColumn::make('user.name')->sortable(),
             ])
             ->defaultSort('date_reglement', 'desc')
-            ->filters([])
             ->actions([
-                Tables\Actions\EditAction::make(),
                 Tables\Actions\ViewAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
+                Tables\Actions\EditAction::make(),
             ]);
     }
-    
-    public static function getRelations(): array
+
+    public static function updateMontantCalcule(Get $get, Set $set): void
     {
-        return [];
+        $details = $get('details');
+        $total = 0;
+        if (is_array($details)) {
+            foreach ($details as $item) {
+                $total += ($item['quantite_vendue'] ?? 0) * ($item['prix_de_vente_unitaire'] ?? 0);
+            }
+        }
+        $set('montant_calcule', $total);
     }
-    
+
     public static function getPages(): array
     {
         return [
             'index' => Pages\ListReglements::route('/'),
             'create' => Pages\CreateReglement::route('/create'),
+            'view' => Pages\ViewReglement::route('/{record}'),
             'edit' => Pages\EditReglement::route('/{record}/edit'),
         ];
     }

@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\ClientResource\RelationManagers;
 
+use App\Enums\OrderStatusEnum; // <-- AJOUT
 use App\Filament\Resources\OrderResource;
+use App\Models\Order; // <-- AJOUT
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -26,37 +28,27 @@ class OrdersRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('numero_commande')
             ->columns([
-                Tables\Columns\TextColumn::make('created_at')->label('Date')->date('d/m/Y')->sortable()->toggleable(), // Ajout de `toggleable` pour une meilleure flexibilité
-                Tables\Columns\TextColumn::make('numero_commande')->label('Numéro')->searchable()->sortable(), // Ajout de `sortable`
-                Tables\Columns\TextColumn::make('montant_total')->label('Montant')->money('XOF')->sortable(),
+                Tables\Columns\TextColumn::make('created_at')->label('Date')->date('d/m/Y')->sortable(),
+                Tables\Columns\TextColumn::make('numero_commande')->label('Numéro')->searchable()->sortable(),
+                
+                // --- CORRECTION : Utilisation de l'Enum pour le statut ---
                 Tables\Columns\TextColumn::make('statut')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'En attente' => 'warning',
-                        'Validée' => 'success',
-                        'Annulée' => 'danger',
-                        default => 'gray',
-                    }),
-                Tables\Columns\TextColumn::make('statut_paiement')->label('Paiement')
-                    ->badge()
-                    ->color(fn (?string $state): string => match ($state) {
-                        'Non réglé' => 'danger',
-                        'Partiellement réglé' => 'warning',
-                        'Complètement réglé' => 'success',
-                        default => 'gray',
-                    }),
+                    ->color(fn (OrderStatusEnum $state): string => $state->getColor())
+                    ->formatStateUsing(fn (OrderStatusEnum $state): string => $state->getLabel()),
+
+                Tables\Columns\TextColumn::make('montant_total')->label('Montant')->money('XOF')->sortable(),
+                Tables\Columns\TextColumn::make('statut_paiement')->label('Paiement')->badge(),
             ])
             ->filters([
+                // --- CORRECTION : Filtre dynamique avec l'Enum ---
                 SelectFilter::make('statut')
-                    ->options([
-                        'En attente' => 'En attente',
-                        'Validée' => 'Validée',
-                        'Annulée' => 'Annulée'
-                    ]),
+                    ->options(collect(OrderStatusEnum::cases())->mapWithKeys(fn ($case) => [$case->value => $case->getLabel()])),
+
                 SelectFilter::make('statut_paiement')
                     ->label('Statut de Paiement')
                     ->options([
-                        'Non réglé' => 'Non réglé',
+                        'non_payee' => 'Non payée',
                         'Partiellement réglé' => 'Partiellement réglé',
                         'Complètement réglé' => 'Complètement réglé',
                     ]),
@@ -71,15 +63,12 @@ class OrdersRelationManager extends RelationManager
                 Tables\Actions\Action::make('view_order')
                     ->label('Détails')
                     ->icon('heroicon-o-eye')
-                    ->url(fn ($record): string => OrderResource::getUrl('view', ['record' => $record])),
+                    ->url(fn (Order $record): string => OrderResource::getUrl('view', ['record' => $record])),
             ])
-            ->emptyStateActions([ // Ajout d'une action si la liste est vide
+            ->emptyStateActions([
                 Tables\Actions\CreateAction::make()->url(fn (): string => OrderResource::getUrl('create', ['client_id' => $this->getOwnerRecord()->id])),
             ]);
     }
 
-    public function isReadOnly(): bool
-    {
-        return true;
-    }
+    // On retire la fonction isReadOnly pour permettre les actions si besoin
 }

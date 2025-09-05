@@ -5,8 +5,6 @@ namespace App\Filament\Resources\ArrivageResource\Pages;
 use App\Filament\Resources\ArrivageResource;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Auth;
 
 class EditArrivage extends EditRecord
 {
@@ -18,12 +16,8 @@ class EditArrivage extends EditRecord
             Actions\DeleteAction::make(),
         ];
     }
-    
-    protected function mutateFormDataBeforeSave(array $data): array
-    {
-        // On s'assure que le user_id ne soit pas modifié
-        $data['user_id'] = $this->getRecord()->user_id;
 
-        return $data;
-    }
+    // La méthode mutateFormDataBeforeSave() n'est plus nécessaire ici
+    // car le user_id ne fait pas partie du formulaire d'édition
+    // et ne risque donc pas d'être écrasé.
 }

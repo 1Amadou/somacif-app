@@ -11,8 +11,7 @@ class Inventory extends Model
     use HasFactory;
 
     /**
-     *
-     * Cela lie définitivement ce modèle à la table 'inventories'.
+     * Lie définitivement ce modèle à la table 'inventories'.
      */
     protected $table = 'inventories';
 

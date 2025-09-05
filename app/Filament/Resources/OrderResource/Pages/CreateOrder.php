@@ -2,13 +2,19 @@
 
 namespace App\Filament\Resources\OrderResource\Pages;
 
-use App\Filament\Resources\OrderResource;
+use App\Enums\OrderStatusEnum;
+// CORRECTION : On importe la bonne ressource
+use App\Filament\Resources\OrderResource; 
+use App\Models\UniteDeVente;
+use App\Services\StockManager;
+use Filament\Actions;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
 
 class CreateOrder extends CreateRecord
 {
+    // CORRECTION : On lie cette page à la ressource "OrderResource", et non "ArrivageResource"
     protected static string $resource = OrderResource::class;
 
     protected function getRedirectUrl(): string
@@ -18,27 +24,47 @@ class CreateOrder extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        // On s'assure que la clé 'items' existe et est un tableau
-        if (!isset($data['items']) || !is_array($data['items'])) {
-            $data['items'] = [];
-        }
-
-        // Calcule le montant total en iterant sur les items
-        $total = 0;
-        foreach ($data['items'] as $item) {
-            $total += ($item['quantite'] ?? 0) * ($item['prix_unitaire'] ?? 0);
-        }
-
-        // Ajoute les données calculées et l'ID de l'utilisateur
-        $data['montant_total'] = $total;
-        $data['statut_paiement'] = 'non_paye';
         $data['user_id'] = Auth::id();
-
-        // Gère la génération du numéro de commande si le champ est vide
-        if (empty($data['numero_commande'])) {
-            $data['numero_commande'] = 'CMD-' . Str::upper(Str::random(8));
-        }
-
         return $data;
+    }
+
+    // On utilise une action personnalisée pour inclure la validation de stock
+    protected function getCreateFormAction(): Actions\Action
+    {
+        return parent::getCreateFormAction()->action('createOrder');
+    }
+
+    public function createOrder(): void
+    {
+        $data = $this->form->getState();
+
+        // Si on tente de valider directement, on vérifie le stock
+        if ($data['statut'] === OrderStatusEnum::VALIDEE->value) {
+            $stockManager = app(StockManager::class);
+            $items = $data['items'] ?? [];
+            $errors = [];
+
+            foreach ($items as $item) {
+                $unite = UniteDeVente::find($item['unite_de_vente_id']);
+                $quantiteDemandee = $item['quantite'];
+                $stockDisponible = $stockManager->getInventoryStock($unite, null);
+
+                if ($stockDisponible < $quantiteDemandee) {
+                    $errors[] = "Stock insuffisant pour '{$unite->nom_complet}' (Demandé: {$quantiteDemandee}, Disponible: {$stockDisponible})";
+                }
+            }
+
+            if (!empty($errors)) {
+                Notification::make()
+                    ->title('Validation échouée : Stock Insuffisant')
+                    ->danger()
+                    ->body(implode("\n", $errors))
+                    ->persistent()
+                    ->send();
+                return;
+            }
+        }
+        
+        $this->create();
     }
 }

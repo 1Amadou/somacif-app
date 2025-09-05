@@ -4,14 +4,13 @@ namespace App\Filament\Pages;
 
 use App\Models\Arrivage;
 use App\Models\Inventory;
-use App\Models\Reglement;
 use App\Models\UniteDeVente;
+use App\Services\StockManager;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Pages\Page;
-use Illuminate\Database\Eloquent\Builder;
 
 class SuiviParArrivage extends Page implements HasForms
 {
@@ -50,73 +49,41 @@ class SuiviParArrivage extends Page implements HasForms
         }
 
         $reportData = [];
-        $totalCoutAchat = 0; // <-- NOUVEAU
-        $totalMontantVentes = 0; // <-- NOUVEAU
-        
-        $uniteDeVenteIds = collect($arrivage->details_produits)->pluck('unite_de_vente_id')->unique()->toArray();
-
-        $unitesDeVente = UniteDeVente::whereIn('id', $uniteDeVenteIds)->get()->keyBy('id');
-        $inventories = Inventory::whereIn('unite_de_vente_id', $uniteDeVenteIds)->get()->groupBy('unite_de_vente_id');
-
-        // On cherche les ventes effectuées directement ou via des règlements
-        $ventesDirectes = \App\Models\VenteDirecteItem::whereHas('venteDirecte', fn(Builder $q) => $q->whereBetween('date_vente', [$arrivage->date_arrivage, now()]))
-            ->whereIn('unite_de_vente_id', $uniteDeVenteIds)
-            ->get()
-            ->groupBy('unite_de_vente_id');
-
-        $ventesReglements = \App\Models\ReglementItem::whereHas('reglement', fn(Builder $q) => $q->whereBetween('date_reglement', [$arrivage->date_arrivage, now()]))
-            ->whereIn('unite_de_vente_id', $uniteDeVenteIds)
-            ->get()
-            ->groupBy('unite_de_vente_id');
+        $stockManager = app(StockManager::class);
+        $totalCoutAchat = $arrivage->montant_total_arrivage;
+        $totalQuantiteRecue = $arrivage->total_quantite;
+        $totalStockRestant = 0;
 
         foreach ($arrivage->details_produits as $detail) {
-            $uniteId = $detail['unite_de_vente_id'];
-            $unite = $unitesDeVente->get($uniteId);
+            $unite = UniteDeVente::find($detail['unite_de_vente_id']);
             if (!$unite) continue;
 
             $quantiteRecue = $detail['quantite'] ?? 0;
-            $prixAchatUnitaire = $detail['prix_achat_unitaire'] ?? 0; // <-- NOUVEAU
-
-            // Calcul de la quantité totale vendue
-            $quantiteVendueDirecte = $ventesDirectes->get($uniteId, collect())->sum('quantite');
-            $quantiteVendueReglement = $ventesReglements->get($uniteId, collect())->sum('quantite_vendue');
-            $quantiteVendueTotale = $quantiteVendueDirecte + $quantiteVendueReglement;
-
-            // Calcul du montant total des ventes
-            $montantVentesDirectes = $ventesDirectes->get($uniteId, collect())->sum(fn($i) => $i->quantite * $i->prix_unitaire);
-            $montantVentesReglements = $ventesReglements->get($uniteId, collect())->sum(fn($i) => $i->quantite_vendue * $i->prix_de_vente_unitaire);
-            $montantVentesTotales = $montantVentesDirectes + $montantVentesReglements;
             
-            // Stock restant chez TOUS les clients pour cette unité
-            $stockChezClients = $inventories->get($uniteId, collect())->sum('quantite_stock');
+            // On récupère le stock actuel, qui est la somme du stock principal et de celui des points de vente
+            $stockPrincipal = $stockManager->getInventoryStock($unite, null);
+            $stockClients = Inventory::where('unite_de_vente_id', $unite->id)->whereNotNull('point_de_vente_id')->sum('quantite_stock');
+            $stockTotalActuel = $stockPrincipal + $stockClients;
             
-            $stockTotalActuel = $unite->stock + $stockChezClients;
-
-            // Calculs pour les totaux globaux
-            $totalCoutAchat += $quantiteRecue * $prixAchatUnitaire;
-            $totalMontantVentes += $montantVentesTotales;
+            $totalStockRestant += $stockTotalActuel;
 
             $reportData[] = [
-                'nom_produit' => $unite->nom_unite . ' (' . $unite->calibre . ')',
-                'quantite_recue_arrivage' => $quantiteRecue,
-                'prix_achat_unitaire' => $prixAchatUnitaire, // <-- NOUVEAU
-                'quantite_vendue_total' => $quantiteVendueTotale,
-                'montant_ventes_total' => $montantVentesTotales,
-                'stock_chez_clients_total' => $stockChezClients,
-                'stock_entrepot_actuel' => $unite->stock,
+                'nom_complet' => $unite->nom_complet,
+                'quantite_recue' => $quantiteRecue,
+                'stock_entrepot_actuel' => $stockPrincipal,
+                'stock_clients_actuel' => $stockClients,
                 'stock_total_actuel' => $stockTotalActuel,
+                'quantite_sortie' => $quantiteRecue - $stockTotalActuel, // C'est la donnée la plus fiable pour les ventes/transferts
             ];
         }
-        
-        $margeBrute = $totalMontantVentes - $totalCoutAchat;
-        $benefice = $margeBrute; // Pour le moment, pas d'autres coûts
 
         return [
             'arrivage' => $arrivage,
             'reportData' => $reportData,
             'totalCoutAchat' => $totalCoutAchat,
-            'totalMontantVentes' => $totalMontantVentes,
-            'benefice' => $benefice,
+            'totalQuantiteRecue' => $totalQuantiteRecue,
+            'totalStockRestant' => $totalStockRestant,
+            'totalQuantiteSortie' => $totalQuantiteRecue - $totalStockRestant,
         ];
     }
 }

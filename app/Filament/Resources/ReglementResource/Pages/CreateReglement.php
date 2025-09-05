@@ -3,45 +3,48 @@
 namespace App\Filament\Resources\ReglementResource\Pages;
 
 use App\Filament\Resources\ReglementResource;
-use App\Models\Reglement;
-use App\Observers\ReglementObserver;
-use App\Services\StockManager;
+use App\Models\Order;
 use Filament\Actions;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use Filament\Support\Exceptions\Halt;
 
 class CreateReglement extends CreateRecord
 {
     protected static string $resource = ReglementResource::class;
 
-    /**
-     * LOGIQUE CONNECTÉE : C'est ici que le lien se fait avec notre code testé.
-     */
-    protected function handleRecordCreation(array $data): Model
+    protected function getRedirectUrl(): string
     {
-        $reglement = null;
+        return $this->getResource()::getUrl('index');
+    }
 
-        DB::transaction(function () use ($data, &$reglement) {
-            $ordersData = $data['orders'] ?? [];
-            $detailsData = $data['details'] ?? [];
-            unset($data['orders'], $data['details']);
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        $data['user_id'] = Auth::id();
 
-            $reglement = static::getModel()::create($data);
+        $order = Order::with('items.uniteDeVente')->find($data['order_id']);
+        $details = collect($data['details'] ?? []);
+        $errors = [];
+        $ventesParArticle = $details->groupBy('unite_de_vente_id');
 
-            if (!empty($ordersData)) {
-                $reglement->orders()->attach($ordersData);
+        foreach ($ventesParArticle as $uniteId => $ventes) {
+            $totalVendu = $ventes->sum('quantite_vendue');
+            $itemCommande = $order->items->firstWhere('unite_de_vente_id', $uniteId);
+            if (!$itemCommande) continue;
+            
+            $quantiteCommandee = $itemCommande->quantite;
+
+            if ($totalVendu > $quantiteCommandee) {
+                $errors[] = "Pour l'article '{$itemCommande->uniteDeVente->nom_complet}', la quantité totale vendue ({$totalVendu}) dépasse la quantité reçue ({$quantiteCommandee}).";
             }
-            if (!empty($detailsData)) {
-                $reglement->details()->createMany($detailsData);
-            }
-        });
-
-        if ($reglement) {
-            // On déclenche manuellement notre logique après la sauvegarde.
-            (new ReglementObserver(new StockManager()))->process($reglement);
         }
 
-        return $reglement;
+        if (!empty($errors)) {
+            Notification::make()->title('Erreur de Quantité')->danger()->body(implode("\n", $errors))->send();
+            throw new Halt();
+        }
+
+        return $data;
     }
 }

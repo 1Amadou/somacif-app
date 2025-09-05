@@ -24,6 +24,8 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Notification as Notifier;
 use App\Models\VenteDirecte;
 use App\Observers\VenteDirecteObserver;
+use App\Models\StockTransfert;
+use App\Observers\StockTransfertObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -63,6 +65,7 @@ class AppServiceProvider extends ServiceProvider
         OrderItem::observe(OrderItemObserver::class);
         Reglement::observe(ReglementObserver::class);
         VenteDirecte::observe(VenteDirecteObserver::class);
+        StockTransfert::observe(StockTransfertObserver::class);
     }
 
     /**

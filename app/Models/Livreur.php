@@ -3,8 +3,11 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany; // Importez la classe HasMany
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+// On importe le modèle Order pour pouvoir l'utiliser
+use App\Models\Order;
 
 class Livreur extends Authenticatable
 {
@@ -16,13 +19,13 @@ class Livreur extends Authenticatable
     ];
 
     protected $hidden = ['password', 'remember_token', 'verification_code'];
-    
+
     protected $casts = [
         'password' => 'hashed',
         'verification_code' => 'hashed', // Hachage du code de vérification
         'verification_code_expires_at' => 'datetime',
     ];
-    
+
     public function getFullNameAttribute(): string
     {
         return "{$this->prenom} {$this->nom}";
@@ -35,5 +38,16 @@ class Livreur extends Authenticatable
         $this->verification_code_expires_at = now()->addMinutes(10);
         $this->save();
         return $code; // Retourne le code en clair pour l'envoi
+    }
+
+    /**
+     * NOUVELLE FONCTION AJOUTÉE
+     * Définit la relation entre le livreur et ses commandes.
+     */
+    public function orders(): HasMany
+    {
+        // Un livreur peut avoir plusieurs commandes.
+        // Laravel va chercher les commandes où 'livreur_id' correspond à l'id de ce livreur.
+        return $this->hasMany(Order::class, 'livreur_id');
     }
 }
