@@ -2,30 +2,26 @@
 
 namespace App\Filament\Resources;
 
+use App\Enums\OrderStatusEnum;
 use App\Filament\Resources\OrderResource\Pages;
 use App\Models\Order;
 use App\Models\PointDeVente;
 use App\Models\UniteDeVente;
 use Filament\Forms;
-use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\Group;
-use Filament\Forms\Components\Placeholder;
-use Filament\Forms\Components\Repeater;
-use Filament\Forms\Components\Section;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Tables\Columns\BadgeColumn;
-use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
-use App\Services\StockManager;
+
+use Filament\Infolists\Infolist;
+use Filament\Infolists\Components\Section;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Components\RepeatableEntry;
+
 
 class OrderResource extends Resource
 {
@@ -38,194 +34,118 @@ class OrderResource extends Resource
     {
         return $form
             ->schema([
-                Section::make('Détails de la Commande')
+                Forms\Components\Section::make('Détails de la Commande')
                     ->schema([
-                        // ... (champs existants)
-                        TextInput::make('numero_commande')
-                            ->default('CMD-' . random_int(1000, 9999))
-                            ->disabled()
-                            ->dehydrated()
-                            ->required(),
-                        Select::make('client_id')
-                            ->relationship('client', 'nom', fn (Builder $query) => $query->whereNotNull('nom'))
-                            ->searchable()->preload()->live()
-                            ->afterStateUpdated(fn (Set $set) => $set('point_de_vente_id', null))
-                            ->required()->label('Client'),
-                        Select::make('point_de_vente_id')
-                            ->label('Point de Vente')
-                            ->options(fn (Get $get): Collection => PointDeVente::query()
-                                ->where('responsable_id', $get('client_id'))
-                                ->pluck('nom', 'id'))
-                            ->searchable()->preload()->required(),
-                        DatePicker::make('created_at')
-                            ->label('Date de commande')->default(now())->disabled(),
+                        Forms\Components\TextInput::make('numero_commande')->default(fn () => strtoupper(uniqid('CMD-')))->disabled()->dehydrated()->required(),
+                        Forms\Components\Select::make('client_id')->relationship('client', 'nom')->searchable()->preload()->live()->afterStateUpdated(fn (Set $set) => $set('point_de_vente_id', null))->required()->label('Client'),
+                        Forms\Components\Select::make('point_de_vente_id')->label('Point de Vente de Destination')->options(fn (Get $get): Collection => PointDeVente::query()->where('responsable_id', $get('client_id'))->pluck('nom', 'id'))->searchable()->preload()->required(),
                     ])->columns(2),
-                
-                Section::make('Statut & Livraison')
+
+                Forms\Components\Section::make('Statut & Livraison')->schema([
+                    Forms\Components\Select::make('statut')->options(collect(OrderStatusEnum::cases())->mapWithKeys(fn ($case) => [$case->value => $case->getLabel()]))->required()->live()->default(OrderStatusEnum::EN_ATTENTE->value),
+                    Forms\Components\Select::make('livreur_id')->relationship('livreur', 'nom')->getOptionLabelFromRecordUsing(fn ($record) => "{$record->prenom} {$record->nom}")->searchable(['nom', 'prenom'])->preload()->label('Livreur à assigner'),
+                ]),
+
+                Forms\Components\Section::make('Articles de la Commande')
                     ->schema([
-                        Select::make('statut')
-                            ->options([
-                                'en_attente' => 'En attente',
-                                'validee' => 'Validée (Transfert de stock)',
-                                'en_preparation' => 'En préparation',
-                                'en_cours_livraison' => 'En cours de livraison',
-                                'livree' => 'Livrée',
-                                'annulee' => 'Annulée',
-                            ])
-                            ->required()
-                            ->live()
-                            ->default('en_attente')
-                            ->disabled(fn (?Order $record): bool => $record && $record->statut === 'validee')
-                            ->afterStateUpdated(function (Set $set, Get $get, ?Order $record) {
-                                // Ne pas ré-activer les champs si la commande a déjà été validée.
-                                if ($record && $record->statut === 'validee') {
-                                    $set('statut', 'validee');
-                                    return;
-                                }
-                            })
-                            ->rules(function (Get $get, ?Order $record) {
-                                // Règle de validation personnalisée pour le stock
-                                return [
-                                    fn (string $attribute, $value, \Closure $fail) => $value === 'validee' && !$record?->exists ? self::validateStock($get, $fail) : null,
-                                ];
-                            })
-                            ->dehydrated(fn (?string $state): bool => filled($state)),
-                            
-                        // ... (le reste du code du groupe "Livraison" est identique)
-                        Group::make()
-                            ->schema([
-                                Select::make('livreur_id')
-                                    ->relationship(name: 'livreur')
-                                    ->getOptionLabelFromRecordUsing(fn ($record) => "{$record->prenom} {$record->nom}")
-                                    ->searchable(['nom', 'prenom'])
-                                    ->preload()
-                                    ->label('Livreur à assigner'),
-                            ])
-                            ->visible(function (Get $get): bool {
-                                $status = $get('statut');
-                                return in_array($status, ['en_preparation', 'en_cours_livraison', 'livree']);
-                            }),
-                    ]),
-                
-                Section::make('Articles de la Commande')
-                    ->schema([
-                        Repeater::make('items')
+                        Forms\Components\Repeater::make('items')
                             ->relationship()
                             ->schema([
-                                // ... (schéma existant)
-                                Select::make('unite_de_vente_id')
-                                    ->relationship('uniteDeVente', 'nom_unite', fn (Builder $query) => $query->whereNotNull('nom_unite'))
+                                Forms\Components\Select::make('unite_de_vente_id')->label('Produit (Unité de vente)')
+                                    ->options(fn () => UniteDeVente::query()->get()->filter(fn ($unite) => $unite->stock_entrepôt_principal > 0)->pluck('nom_complet_with_stock', 'id'))
                                     ->searchable()->preload()->required()->live()
                                     ->afterStateUpdated(function (Set $set, $state) {
                                         $unite = UniteDeVente::find($state);
-                                        $set('prix_unitaire', $unite?->prix_unitaire ?? 0);
-                                    })
-                                    ->label('Produit (Unité de vente)'),
-                                TextInput::make('quantite')
-                                    ->numeric()->required()->live(onBlur: true)->default(1),
-                                TextInput::make('prix_unitaire')
-                                    ->numeric()->required()->live(onBlur: true),
-                                Placeholder::make('prix_total_ligne')
-                                    ->label('Total Ligne')
-                                    ->content(fn (Get $get): string => number_format(($get('quantite') ?? 0) * ($get('prix_unitaire') ?? 0), 0, ',', ' ') . ' FCFA'),
+                                        $set('prix_unitaire', $unite?->prix_particulier ?? 0);
+                                    }),
+                                Forms\Components\TextInput::make('quantite')->numeric()->required()->live(onBlur: true)->default(1),
+                                Forms\Components\TextInput::make('prix_unitaire')->numeric()->required()->live(onBlur: true),
+                                Forms\Components\Placeholder::make('prix_total_ligne')->label('Total Ligne')->content(fn (Get $get): string => number_format(($get('quantite') ?? 0) * ($get('prix_unitaire') ?? 0), 0, ',', ' ') . ' FCFA'),
                             ])
-                            ->columns(4)
-                            ->addActionLabel('Ajouter un article')
-                            ->collapsible()->reorderable(false)->live()
+                            ->columns(4)->addActionLabel('Ajouter un article')->collapsible()->live()
                             ->afterStateUpdated(fn (Get $get, Set $set) => self::updateGrandTotal($get, $set))
-                            ->deleteAction(fn (Forms\Components\Actions\Action $action) => $action->after(fn (Get $get, Set $set) => self::updateGrandTotal($get, $set))),
+                            ->deleteAction(fn (Forms\Components\Actions\Action $action) => $action->after(fn (Get $get, Set $set) => self::updateGrandTotal($get, $set)))
+                            // *** VALIDATION DE STOCK GLOBALE SUR LE REPEATER ***
+                            ->rules([
+                                function (Get $get) {
+                                    return function (string $attribute, array $value, \Closure $fail) use ($get) {
+                                        if ($get('statut') !== OrderStatusEnum::VALIDEE->value) {
+                                            return; // On ne valide que si on essaie de passer une commande "Validée"
+                                        }
+                                        
+                                        foreach ($value as $itemData) {
+                                            $unite = UniteDeVente::find($itemData['unite_de_vente_id']);
+                                            if (!$unite || $unite->stock_entrepôt_principal < $itemData['quantite']) {
+                                                $fail("Le stock pour l'article '{$unite->nom_complet}' est insuffisant.");
+                                                return;
+                                            }
+                                        }
+                                    };
+                                }
+                            ]),
                     ]),
-                
-                Section::make('Résumé Financier et Notes')
-                    ->schema([
-                        TextInput::make('montant_total')
-                            ->numeric()->readOnly()->prefix('FCFA')
-                            ->label('Montant Total de la Commande'),
-                        Textarea::make('notes')->columnSpanFull(),
-                    ]),
-            ]);
-    }
 
-    /**
-     * Valide si le stock est suffisant pour les articles de la commande.
-     */
-    public static function validateStock(Get $get, \Closure $fail): void
-    {
-        $items = $get('items');
-        if (empty($items)) {
-            $fail("La commande ne contient aucun article.");
-            return;
-        }
-
-        $stockManager = app(StockManager::class);
-        $erreurs = [];
-
-        foreach ($items as $item) {
-            $uniteDeVenteId = $item['unite_de_vente_id'] ?? null;
-            $quantiteDemandee = $item['quantite'] ?? 0;
-            
-            if ($uniteDeVenteId && $quantiteDemandee > 0) {
-                $unite = UniteDeVente::find($uniteDeVenteId);
-                $stockDisponible = $stockManager->getInventoryStock($unite, null); // null pour l'entrepôt principal
-                
-                if ($stockDisponible < $quantiteDemandee) {
-                    $erreurs[] = "Stock insuffisant pour l'article '{$unite->nom_unite}' (disponible: {$stockDisponible}, demandé: {$quantiteDemandee})";
-                }
-            }
-        }
-
-        if (!empty($erreurs)) {
-            foreach ($erreurs as $erreur) {
-                $fail($erreur);
-            }
-        }
-    }
-
-    // ... (le reste des méthodes `table`, `updateGrandTotal`, `getRelations`, `getPages` restent identiques)
-    public static function table(Table $table): Table
-    {
-        return $table
-            ->columns([
-                TextColumn::make('numero_commande')->searchable()->sortable(),
-                TextColumn::make('client.nom')->searchable()->sortable(),
-                TextColumn::make('pointDeVente.nom')->label('Point de Vente'),
-                BadgeColumn::make('statut')
-                    ->colors([
-                        'warning' => fn ($state) => in_array($state, ['en_attente', 'en_preparation']),
-                        'success' => 'livree',
-                        'info' => 'en_cours_livraison',
-                        'primary' => 'validee', 
-                        'danger' => 'annulee',
-                    ])->sortable(),
-                BadgeColumn::make('statut_paiement')
-                    ->colors([
-                        'danger' => 'non_payee',
-                        'warning' => 'Partiellement réglé',
-                        'success' => 'Complètement réglé',
-                    ])->sortable(),
-                TextColumn::make('montant_total')->money('XOF')->sortable(),
-                TextColumn::make('created_at')->dateTime('d/m/Y')->label('Date')->sortable(),
-            ])
-            ->defaultSort('created_at', 'desc')
-            ->filters([
-                //
-            ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\ViewAction::make(),
-                Tables\Actions\Action::make('invoice')
-                    ->label('Facture')
-                    ->icon('heroicon-o-document-arrow-down')
-                    ->url(fn (Order $record) => route('invoice.order', $record))
-                    ->openUrlInNewTab(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                Forms\Components\Section::make('Résumé')->schema([
+                    Forms\Components\TextInput::make('montant_total')->numeric()->readOnly()->prefix('FCFA')->label('Montant Total'),
+                    Forms\Components\Textarea::make('notes')->columnSpanFull(),
                 ]),
             ]);
     }
 
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                Tables\Columns\TextColumn::make('numero_commande')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('client.nom')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('statut')
+                    ->badge()
+                    ->color(fn (OrderStatusEnum $state): string => $state->getColor())
+                    ->formatStateUsing(fn (OrderStatusEnum $state): string => $state->getLabel())
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('montant_total')->money('XOF')->sortable(),
+                Tables\Columns\TextColumn::make('created_at')->dateTime('d/m/Y')->label('Date')->sortable(),
+            ])
+            ->defaultSort('created_at', 'desc')
+            ->actions([
+                Tables\Actions\ViewAction::make(),
+                Tables\Actions\EditAction::make(),
+            ]);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Section::make('Résumé Financier')
+                    ->schema([
+                        TextEntry::make('montant_total')->money('XOF'),
+                        TextEntry::make('total_verse')->label('Total Versé')->money('XOF')->color('success'),
+                        TextEntry::make('solde_restant')->label('Solde Restant')->money('XOF')->color('warning'),
+                    ])->columns(3),
+                
+                Section::make('Détails de la Commande')
+                    ->schema([
+                        TextEntry::make('numero_commande'),
+                        TextEntry::make('client.nom'),
+                        TextEntry::make('pointDeVente.nom')->label('Point de Vente'),
+                        TextEntry::make('statut')->badge()->color(fn ($state): string => $state->getColor())->formatStateUsing(fn ($state): string => $state->getLabel()),
+                        TextEntry::make('statut_paiement')->label('Statut du Paiement')->badge(),
+                        TextEntry::make('livreur.full_name')->label('Livreur'),
+                    ])->columns(3),
+
+                Section::make('Articles Commandés')
+                    ->schema([
+                        RepeatableEntry::make('items')
+                            ->schema([
+                                TextEntry::make('nom_produit')->label('Article')->columnSpan(2),
+                                TextEntry::make('quantite'),
+                                TextEntry::make('prix_unitaire')->money('XOF'),
+                            ])->columns(4)->label(''),
+                    ])
+            ]);
+    }
+    
     public static function updateGrandTotal(Get $get, Set $set): void
     {
         $total = 0;
@@ -237,7 +157,7 @@ class OrderResource extends Resource
         }
         $set('montant_total', $total);
     }
-
+    
     public static function getRelations(): array
     {
         return [];

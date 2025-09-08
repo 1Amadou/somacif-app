@@ -3,49 +3,57 @@
 namespace App\Filament\Resources\ArrivageResource\Pages;
 
 use App\Filament\Resources\ArrivageResource;
-use Filament\Actions;
+use App\Models\Inventory;
+use App\Models\LieuDeStockage;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Auth;
-use App\Models\Arrivage;
-use App\Models\ArrivageDetail;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CreateArrivage extends CreateRecord
 {
     protected static string $resource = ArrivageResource::class;
 
-    protected function getRedirectUrl(): string
-    {
-        return $this->getResource()::getUrl('index');
-    }
-
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $data['user_id'] = Auth::id();
+        $data['user_id'] = auth()->id();
         return $data;
     }
-    
-    protected function handleRecordCreation(array $data): Model
+
+    /**
+     * *** LA CORRECTION DÉFINITIVE ***
+     * Cette fonction s'exécute APRÈS que l'arrivage ET tous ses articles
+     * ont été créés. C'est l'endroit parfait pour mettre à jour le stock.
+     */
+    protected function afterCreate(): void
     {
-        // 1. Sauvegarder les détails du répéteur et les retirer des données
-        // principales pour éviter l'erreur de base de données.
-        $details_produits = $data['details_produits'] ?? [];
-        unset($data['details_produits']);
+        $arrivage = $this->getRecord();
+        $arrivage->load('items');
 
-        // 2. Créer l'Arrivage en utilisant le tableau de données nettoyé.
-        // On s'assure que user_id est présent.
-        $data['user_id'] = Auth::id();
-        $arrivage = Arrivage::create($data);
+        Log::info('--- DÉBUT DE LA MISE À JOUR DU STOCK ---');
+        Log::info('[afterCreate] Arrivage #' . $arrivage->id . ' créé. Articles trouvés : ' . $arrivage->items->count());
 
-        // 3. Créer les détails de l'arrivage en utilisant la variable temporaire.
-        foreach ($details_produits as $detailData) {
-            $arrivage->details()->create([
-                'unite_de_vente_id' => $detailData['unite_de_vente_id'],
-                'quantite' => $detailData['quantite'],
-                'prix_achat_unitaire' => $detailData['prix_achat_unitaire'],
-            ]);
-        }
+        DB::transaction(function () use ($arrivage) {
+            $entrepotId = cache()->rememberForever('entrepot_principal_id', function () {
+                return LieuDeStockage::where('type', 'entrepot')->value('id');
+            });
 
-        return $arrivage;
+            if (!$entrepotId) {
+                Log::error("[afterCreate] ERREUR : Entrepôt Principal non trouvé !");
+                return;
+            }
+
+            foreach ($arrivage->items as $item) {
+                Log::info('[afterCreate] -> Mise à jour du stock pour UV ID ' . $item->unite_de_vente_id . ' | Qté: ' . $item->quantite);
+                
+                $inventory = Inventory::firstOrCreate(
+                    ['lieu_de_stockage_id' => $entrepotId, 'unite_de_vente_id' => $item->unite_de_vente_id],
+                    ['quantite_stock' => 0]
+                );
+                
+                $inventory->increment('quantite_stock', $item->quantite);
+            }
+            Log::info('--- MISE À JOUR DU STOCK TERMINÉE ---');
+        });
     }
 }

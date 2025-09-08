@@ -7,30 +7,26 @@ use App\Models\UniteDeVente;
 
 class OrderItemObserver
 {
+    /**
+     * Gère l'événement "creating" d'un OrderItem.
+     * S'exécute AVANT que l'article ne soit sauvegardé pour enrichir les données.
+     */
     public function creating(OrderItem $orderItem): void
     {
-        if (!is_null($orderItem->unite_de_vente_id)) {
+        // On vérifie qu'on a bien l'ID de l'unité de vente.
+        if ($orderItem->unite_de_vente_id) {
+            
+            // On charge l'unité de vente avec son produit pour avoir toutes les infos.
             $uniteDeVente = UniteDeVente::with('product')->find($orderItem->unite_de_vente_id);
 
             if ($uniteDeVente) {
+                // 1. On assigne l'ID du produit parent.
                 $orderItem->product_id = $uniteDeVente->product_id;
-                $orderItem->nom_produit = $uniteDeVente->product->nom;
-                $orderItem->calibre = $uniteDeVente->calibre;
-                $orderItem->unite = $uniteDeVente->nom_unite;
-            }
-        }
-    }
 
-    public function saving(OrderItem $orderItem): void
-    {
-        if ($orderItem->unite_de_vente_id) {
-            $uniteDeVente = UniteDeVente::find($orderItem->unite_de_vente_id);
-
-            if ($uniteDeVente) {
-                if ($orderItem->prix_unitaire != $uniteDeVente->prix_unitaire) {
-                    $uniteDeVente->prix_unitaire = $orderItem->prix_unitaire;
-                    $uniteDeVente->saveQuietly();
-                }
+                // 2. *** LA CORRECTION EST ICI ***
+                // On assigne le nom complet de l'unité de vente (ex: "Tilapia (Carton 10kg)")
+                // au champ 'nom_produit' pour l'archivage.
+                $orderItem->nom_produit = $uniteDeVente->nom_complet;
             }
         }
     }

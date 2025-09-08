@@ -8,12 +8,13 @@ use App\Models\Product;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Set;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
 
 class ProductResource extends Resource
 {
@@ -33,6 +34,7 @@ class ProductResource extends Resource
                             Forms\Components\TextInput::make('nom')
                                 ->required()
                                 ->live(onBlur: true)
+                                ->unique(ignoreRecord: true)
                                 ->afterStateUpdated(fn (Set $set, ?string $state) => $set('slug', Str::slug($state))),
                             Forms\Components\TextInput::make('slug')
                                 ->required()
@@ -44,7 +46,7 @@ class ProductResource extends Resource
                                 ->label('Description Longue')
                                 ->columnSpanFull(),
                         ])->columns(2),
-                        
+
                         Forms\Components\Tabs\Tab::make('Détails & Recettes')->schema([
                             Forms\Components\TextInput::make('origine'),
                             Forms\Components\TextInput::make('poids_moyen'),
@@ -62,19 +64,11 @@ class ProductResource extends Resource
                             ->default(true),
                         Forms\Components\FileUpload::make('image_principale')
                             ->label('Image Principale')
-                            ->image()
-                            ->imageEditor()
-                            ->disk('public')
-                            ->directory('products')
+                            ->image()->imageEditor()->disk('public')->directory('products')
                             ->nullable(),
                         Forms\Components\FileUpload::make('images_galerie')
                             ->label('Galerie d\'images')
-                            ->multiple()
-                            ->image()
-                            ->imageEditor()
-                            ->disk('public')
-                            ->directory('products')
-                            ->reorderable()
+                            ->multiple()->image()->imageEditor()->disk('public')->directory('products')->reorderable()
                             ->nullable(),
                     ]),
                     Forms\Components\Section::make('SEO')->schema([
@@ -86,29 +80,60 @@ class ProductResource extends Resource
     }
 
     public static function table(Table $table): Table
+{
+    return $table
+        ->columns([
+            Tables\Columns\ImageColumn::make('image_principale')->label('Image'),
+            Tables\Columns\TextColumn::make('nom')->searchable()->sortable(),
+            Tables\Columns\IconColumn::make('is_visible')->label('Visibilité')->boolean(),
+            Tables\Columns\TextColumn::make('uniteDeVentes_count')->counts('uniteDeVentes')->label('Unités de Vente'),
+
+            Tables\Columns\TextColumn::make('stock_total_entrepot')
+                ->label('Stock Total (Entrepôt Principal)')
+                ->state(function (Product $record): string {
+                    $stock = $record->uniteDeVentes->sum('stock_entrepôt_principal');
+                    return number_format($stock, 0, '', ' ');
+                })
+                // *** LA CORRECTION EST ICI ***
+                // On explique à Filament comment trier cette colonne calculée.
+                ->sortable(query: function (Builder $query, string $direction): Builder {
+                    $entrepotId = cache()->get('entrepot_principal_id');
+                    if (!$entrepotId) {
+                        return $query; // Ne rien faire si l'entrepôt n'est pas trouvé
+                    }
+                    
+                    // On ajoute une sous-requête pour calculer la somme des stocks
+                    // et on trie en fonction de cette somme.
+                    return $query
+                        ->withSum(['uniteDeVentes as stock_sum' => function (Builder $query) use ($entrepotId) {
+                            $query->join('inventories', 'unite_de_ventes.id', '=', 'inventories.unite_de_vente_id')
+                                ->where('inventories.lieu_de_stockage_id', $entrepotId);
+                        }], 'inventories.quantite_stock')
+                        ->orderBy('stock_sum', $direction);
+                }),
+        ])
+        ->actions([
+            Tables\Actions\EditAction::make(),
+            Tables\Actions\DeleteAction::make(),
+        ])
+        ->bulkActions([
+            Tables\Actions\BulkActionGroup::make([
+                Tables\Actions\DeleteBulkAction::make(),
+            ]),
+        ]);
+}
+
+    protected static function beforeDelete(Model $record): void
     {
-        return $table
-            ->columns([
-                Tables\Columns\ImageColumn::make('image_principale')->label('Image'),
-                Tables\Columns\TextColumn::make('nom')->searchable()->sortable(),
-                Tables\Columns\IconColumn::make('is_visible')->label('Visibilité')->boolean(),
-                Tables\Columns\TextColumn::make('uniteDeVentes_count')->counts('uniteDeVentes')->label('Calibres'),
-                Tables\Columns\TextColumn::make('stock_total')
-                    ->label('Stock Total')
-                    ->state(function (Model $record): string {
-                        $stock = $record->uniteDeVentes()->withSum('inventories', 'quantite_stock')->get()->sum('inventories_sum_quantite_stock');
-                        return number_format($stock, 0, '', ' ');
-                    })
-                    ->sortable(query: function (Builder $query, string $direction): Builder {
-                        return $query
-                            ->withSum('uniteDeVentes.inventories', 'quantite_stock')
-                            ->orderBy('unite_de_ventes_inventories_sum_quantite_stock', $direction);
-                    }),
-            ])
-            ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
-            ]);
+        if ($record->uniteDeVentes()->exists()) {
+            Notification::make()
+                ->title('Suppression impossible')
+                ->body('Ce produit ne peut pas être supprimé car des Unités de Vente y sont associées.')
+                ->danger()
+                ->send();
+
+            self::halt();
+        }
     }
 
     public static function getRelations(): array

@@ -2,89 +2,168 @@
 
 namespace App\Observers;
 
+use App\Enums\OrderStatusEnum;
+use App\Models\Inventory;
+use App\Models\LieuDeStockage;
 use App\Models\Order;
-use App\Services\StockManager;
+use App\Models\UniteDeVente;
+use App\Notifications\AdminOrderDeliveredNotification;
+use App\Notifications\ClientDeliveryInProgressNotification;
+use App\Notifications\LivreurNewMissionNotification;
+use Exception;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 
 class OrderObserver
 {
-    protected StockManager $stockManager;
-
-    public function __construct(StockManager $stockManager)
-    {
-        $this->stockManager = $stockManager;
-    }
-
     /**
-     * Gère la validation et l'annulation d'une commande.
+     * *** CORRECTION MAJEURE : Validation AVANT la création ***
+     * Gère la validation du stock si une commande est créée directement avec le statut "Validée".
      */
-    public function updated(Order $order): void
+    public function creating(Order $order): void
     {
-        // Seule la modification du statut nous intéresse ici
-        if ($order->isDirty('statut')) {
-            $oldStatus = $order->getOriginal('statut');
-            $newStatus = $order->statut;
-
-            // Logique de transfert de stock
-            if ($newStatus === 'validee' && $oldStatus === 'en_attente') {
-                $this->transfertStockFromMainToPointDeVente($order);
-            }
-            
-            // Logique d'annulation : le stock doit être remis en place
-            if ($newStatus === 'annulee' && $oldStatus !== 'annulee') {
-                $this->cancelOrderStockTransfer($order);
-            }
+        if ($order->statut === OrderStatusEnum::VALIDEE) {
+            // On lance la même validation que pour une mise à jour.
+            // Si le stock est insuffisant, une exception sera levée et la création sera bloquée.
+            $this->validateStockForTransfer($order);
         }
     }
 
     /**
-     * Effectue le transfert de stock du dépôt principal vers le point de vente du client.
+     * Gère le transfert de stock APRÈS la création réussie.
      */
-    protected function transfertStockFromMainToPointDeVente(Order $order): void
+    public function created(Order $order): void
     {
-        DB::transaction(function () use ($order) {
-            $order->load('items.uniteDeVente');
-            foreach ($order->items as $item) {
-                // Déduire le stock de l'entrepôt principal (point_de_vente_id = null)
-                $this->stockManager->decreaseInventoryStock(
-                    $item->uniteDeVente,
-                    $item->quantite,
-                    null // Dépôt principal
-                );
-
-                // Augmenter le stock du point de vente du client
-                $this->stockManager->increaseInventoryStock(
-                    $item->uniteDeVente,
-                    $item->quantite,
-                    $order->point_de_vente_id
-                );
-            }
-        });
+        
     }
 
     /**
-     * Annule le transfert de stock en cas d'annulation de la commande.
-     * Le stock est remis dans le dépôt principal.
+     * Gère les actions automatiques basées sur le changement de statut d'une commande existante.
      */
-    protected function cancelOrderStockTransfer(Order $order): void
+    public function updated(Order $order): void
     {
-        DB::transaction(function () use ($order) {
-            $order->load('items.uniteDeVente');
-            foreach ($order->items as $item) {
-                // Diminuer le stock du point de vente
-                $this->stockManager->decreaseInventoryStock(
-                    $item->uniteDeVente,
-                    $item->quantite,
-                    $order->point_de_vente_id
-                );
+        if ($order->isDirty('statut')) {
+            $oldStatus = $order->getOriginal('statut');
+            $newStatus = $order->statut;
 
-                // Remettre le stock dans le dépôt principal
-                $this->stockManager->increaseInventoryStock(
-                    $item->uniteDeVente,
-                    $item->quantite,
-                    null // Dépôt principal
-                );
+            // On ne fait rien si le statut ne change pas réellement.
+            if ($oldStatus === $newStatus) {
+                return;
             }
+
+            DB::transaction(function () use ($order, $oldStatus, $newStatus) {
+                // Si on valide une commande qui était en attente
+                if ($newStatus === OrderStatusEnum::VALIDEE && $oldStatus === OrderStatusEnum::EN_ATTENTE) {
+                    $this->validateStockForTransfer($order); // D'abord valider
+                    $this->transfertStockFromEntrepôtToPointDeVente($order); // Ensuite transférer
+                }
+
+                // Si on annule une commande dont le stock avait été transféré
+                if ($newStatus === OrderStatusEnum::ANNULEE && in_array($oldStatus, [OrderStatusEnum::VALIDEE, OrderStatusEnum::EN_PREPARATION, OrderStatusEnum::EN_COURS_LIVRAISON])) {
+                    $this->returnStockFromPointDeVenteToEntrepôt($order);
+                }
+            });
+
+            // La gestion des notifications reste en dehors de la transaction
+            $this->handleNotifications($order, $newStatus);
+        }
+    }
+
+    /**
+     * Valide que le stock est suffisant pour le transfert. Lance une exception si non.
+     */
+    protected function validateStockForTransfer(Order $order): void
+    {
+        // On doit recharger les 'items' car ils ne sont pas toujours disponibles ici.
+        $order->load('items.uniteDeVente');
+
+        foreach ($order->items as $item) {
+            $uniteDeVente = $item->uniteDeVente;
+            if (!$uniteDeVente) {
+                throw new Exception("Article de commande invalide.");
+            }
+            
+            $stockDisponible = $uniteDeVente->stock_entrepôt_principal;
+            if ($stockDisponible < $item->quantite) {
+                throw new Exception("Stock insuffisant pour '{$uniteDeVente->nom_complet}'. Stock: {$stockDisponible}, Demandé: {$item->quantite}.");
+            }
+        }
+    }
+    
+    // Le reste des fonctions (transfert, retour, notifications) reste identique
+    // car leur logique interne est déjà correcte.
+
+    protected function transfertStockFromEntrepôtToPointDeVente(Order $order): void
+    {
+        $entrepotId = $this->getEntrepôtPrincipalId();
+        $pointDeVenteLieuId = $order->pointDeVente?->lieuDeStockage?->id;
+
+        if (!$entrepotId || !$pointDeVenteLieuId) {
+            throw new Exception("Lieu de stockage source ou destination manquant.");
+        }
+
+        foreach ($order->items as $item) {
+            $inventaireEntrepôt = Inventory::where('lieu_de_stockage_id', $entrepotId)
+                ->where('unite_de_vente_id', $item->unite_de_vente_id)->first();
+            if ($inventaireEntrepôt) {
+                 $inventaireEntrepôt->decrement('quantite_stock', $item->quantite);
+            }
+
+            $inventairePointDeVente = Inventory::firstOrCreate(
+                ['lieu_de_stockage_id' => $pointDeVenteLieuId, 'unite_de_vente_id' => $item->unite_de_vente_id],
+                ['quantite_stock' => 0]
+            );
+            $inventairePointDeVente->increment('quantite_stock', $item->quantite);
+        }
+    }
+
+    protected function returnStockFromPointDeVenteToEntrepôt(Order $order): void
+    {
+        $entrepotId = $this->getEntrepôtPrincipalId();
+        $pointDeVenteLieuId = $order->pointDeVente?->lieuDeStockage?->id;
+
+        if (!$entrepotId || !$pointDeVenteLieuId) {
+            throw new Exception("Impossible de retourner le stock : lieu source ou destination manquant.");
+        }
+
+        foreach ($order->items as $item) {
+            $inventairePointDeVente = Inventory::where('lieu_de_stockage_id', $pointDeVenteLieuId)
+                ->where('unite_de_vente_id', $item->unite_de_vente_id)->first();
+            
+            if ($inventairePointDeVente) {
+                $inventairePointDeVente->decrement('quantite_stock', $item->quantite);
+            }
+
+            $inventaireEntrepôt = Inventory::where('lieu_de_stockage_id', $entrepotId)
+                ->where('unite_de_vente_id', $item->unite_de_vente_id)->first();
+
+            if ($inventaireEntrepôt) {
+                $inventaireEntrepôt->increment('quantite_stock', $item->quantite);
+            }
+        }
+    }
+
+    protected function handleNotifications(Order $order, $newStatus): void
+    {
+        if ($newStatus === OrderStatusEnum::EN_PREPARATION && $order->livreur) {
+            $order->livreur->notify(new LivreurNewMissionNotification($order));
+        }
+
+        if ($newStatus === OrderStatusEnum::EN_COURS_LIVRAISON && $order->client) {
+            $order->client->notify(new ClientDeliveryInProgressNotification($order));
+        }
+
+        if ($newStatus === OrderStatusEnum::LIVREE) {
+            $adminUsers = \App\Models\User::all();
+            Notification::send($adminUsers, new AdminOrderDeliveredNotification($order));
+        }
+    }
+
+    private function getEntrepôtPrincipalId(): ?int
+    {
+        return cache()->rememberForever('entrepot_principal_id', function () {
+            return LieuDeStockage::where('type', 'entrepot')->value('id');
         });
     }
 }

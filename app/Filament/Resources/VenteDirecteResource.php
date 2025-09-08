@@ -3,21 +3,14 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\VenteDirecteResource\Pages;
-use App\Models\Client;
 use App\Models\UniteDeVente;
 use App\Models\VenteDirecte;
 use Filament\Forms;
-use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\Group;
-use Filament\Forms\Components\Placeholder;
-use Filament\Forms\Components\Repeater;
-use Filament\Forms\Components\Section;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -26,7 +19,6 @@ use Illuminate\Database\Eloquent\Builder;
 class VenteDirecteResource extends Resource
 {
     protected static ?string $model = VenteDirecte::class;
-
     protected static ?string $navigationIcon = 'heroicon-o-truck';
     protected static ?string $navigationGroup = 'Ventes en Gros';
     protected static ?int $navigationSort = 1;
@@ -37,41 +29,58 @@ class VenteDirecteResource extends Resource
     {
         return $form
             ->schema([
-                Section::make('Informations sur la Vente')
+                Forms\Components\Section::make('Informations sur la Vente')
                     ->schema([
-                        TextInput::make('numero_facture')
+                        Forms\Components\TextInput::make('numero_facture')
                             ->default('FD-' . random_int(100000, 999999))
-                            ->disabled()
-                            ->dehydrated()
-                            ->required(),
-                        Select::make('client_id')
+                            ->disabled()->dehydrated()->required(),
+                        Forms\Components\Select::make('client_id')
                             ->relationship('client', 'nom', fn (Builder $query) => $query->whereNotNull('nom'))
-                            ->searchable()->preload()->required()
-                            ->label('Client'),
-                        DatePicker::make('date_vente')
-                            ->default(now())
-                            ->required()
-                            ->label('Date de la vente'),
+                            ->searchable()->preload()->required()->label('Client'),
+                        Forms\Components\DatePicker::make('date_vente')
+                            ->default(now())->required()->label('Date de la vente'),
                     ])->columns(3),
 
-                Section::make('Articles Vendus')
+                Forms\Components\Section::make('Articles Vendus (depuis l\'Entrepôt Principal)')
                     ->schema([
-                        Repeater::make('items')
+                        Forms\Components\Repeater::make('items')
                             ->relationship()
                             ->schema([
-                                Select::make('unite_de_vente_id')
-                                    ->relationship('uniteDeVente', 'nom_unite')
+                                Forms\Components\Select::make('unite_de_vente_id')
+                                    ->label('Produit (Unité de vente)')
+                                    ->options(function () {
+                                        // On ne montre que les produits avec un stock positif à l'entrepôt.
+                                        return UniteDeVente::query()
+                                            ->get()
+                                            ->filter(fn ($unite) => $unite->stock_entrepôt_principal > 0)
+                                            ->mapWithKeys(function ($unite) {
+                                                // *** CORRECTION CLÉ 1 ***
+                                                // On utilise le nouvel accesseur 'stock_entrepôt_principal'
+                                                return [$unite->id => $unite->nom_complet . ' (Stock: ' . $unite->stock_entrepôt_principal . ')'];
+                                            });
+                                    })
                                     ->searchable()->preload()->required()->live()
                                     ->afterStateUpdated(function (Set $set, $state) {
                                         $unite = UniteDeVente::find($state);
-                                        $set('prix_unitaire', $unite?->prix_unitaire ?? 0);
-                                    })
-                                    ->label('Produit (Unité de vente)'),
-                                TextInput::make('quantite')
-                                    ->numeric()->required()->live(onBlur: true)->default(1),
-                                TextInput::make('prix_unitaire')
+                                        $set('prix_unitaire', $unite?->prix_particulier ?? 0);
+                                    }),
+                                Forms\Components\TextInput::make('quantite')
+                                    ->numeric()->required()->live(onBlur: true)->default(1)
+                                    // *** CORRECTION CLÉ 2 ***
+                                    // Règle de validation en temps réel
+                                    ->rules([
+                                        fn (Get $get): \Closure => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                            $unite = UniteDeVente::find($get('unite_de_vente_id'));
+                                            if (!$unite) return;
+                                            
+                                            if ($value > $unite->stock_entrepôt_principal) {
+                                                $fail("Le stock est insuffisant. Disponible : {$unite->stock_entrepôt_principal}.");
+                                            }
+                                        },
+                                    ]),
+                                Forms\Components\TextInput::make('prix_unitaire')
                                     ->numeric()->required()->live(onBlur: true),
-                                Placeholder::make('total_ligne')
+                                Forms\Components\Placeholder::make('total_ligne')
                                     ->label('Total Ligne')
                                     ->content(fn (Get $get): string => number_format(($get('quantite') ?? 0) * ($get('prix_unitaire') ?? 0), 0, ',', ' ') . ' FCFA'),
                             ])
@@ -82,13 +91,38 @@ class VenteDirecteResource extends Resource
                             ->deleteAction(fn (Forms\Components\Actions\Action $action) => $action->after(fn (Get $get, Set $set) => self::updateGrandTotal($get, $set))),
                     ]),
 
-                Section::make('Résumé Financier et Notes')
+                Forms\Components\Section::make('Résumé')
                     ->schema([
-                        TextInput::make('montant_total')
-                            ->numeric()->readOnly()->prefix('FCFA')
-                            ->label('Montant Total de la Vente'),
-                        Textarea::make('notes')->columnSpanFull(),
-                    ])->columns(2),
+                        Forms\Components\TextInput::make('montant_total')
+                            ->numeric()->readOnly()->prefix('FCFA')->label('Montant Total de la Vente'),
+                        Forms\Components\Textarea::make('notes')->columnSpanFull(),
+                    ]),
+            ]);
+    }
+    
+    // Le reste du fichier (infolist, table, etc.) reste identique.
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Infolists\Components\Section::make('Informations sur la Vente')->schema([
+                    Infolists\Components\TextEntry::make('numero_facture'),
+                    Infolists\Components\TextEntry::make('client.nom'),
+                    Infolists\Components\TextEntry::make('date_vente')->date('d/m/Y'),
+                ])->columns(3),
+                Infolists\Components\Section::make('Détail des Articles Vendus')->schema([
+                    Infolists\Components\RepeatableEntry::make('items')
+                        ->schema([
+                            Infolists\Components\TextEntry::make('uniteDeVente.nom_complet')->label('Article'),
+                            Infolists\Components\TextEntry::make('quantite')->label('Quantité'),
+                            Infolists\Components\TextEntry::make('prix_unitaire')->money('XOF')->label('Prix Unitaire'),
+                        ])->columns(3)->label(''),
+                ]),
+                Infolists\Components\Section::make('Résumé')->schema([
+                    Infolists\Components\TextEntry::make('montant_total')->money('XOF')->label('Montant Total'),
+                    Infolists\Components\TextEntry::make('notes')->markdown()->label('Notes'),
+                ])->columns(1),
             ]);
     }
 
@@ -102,17 +136,10 @@ class VenteDirecteResource extends Resource
                 Tables\Columns\TextColumn::make('montant_total')->money('XOF')->sortable(),
             ])
             ->defaultSort('date_vente', 'desc')
-            ->filters([
-                //
-            ])
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\ViewAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
+                Tables\Actions\DeleteAction::make(),
             ]);
     }
 

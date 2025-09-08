@@ -3,45 +3,72 @@
 namespace App\Filament\Resources\ReglementResource\Pages;
 
 use App\Filament\Resources\ReglementResource;
-use App\Models\Reglement;
-use App\Observers\ReglementObserver;
-use App\Services\StockManager;
-use Filament\Actions;
+use App\Models\Inventory;
+use App\Models\LieuDeStockage;
 use Filament\Resources\Pages\CreateRecord;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Exception;
 
 class CreateReglement extends CreateRecord
 {
     protected static string $resource = ReglementResource::class;
 
-    /**
-     * LOGIQUE CONNECTÉE : C'est ici que le lien se fait avec notre code testé.
-     */
-    protected function handleRecordCreation(array $data): Model
+    protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $reglement = null;
+        $data['user_id'] = Auth::id();
+        return $data;
+    }
 
-        DB::transaction(function () use ($data, &$reglement) {
-            $ordersData = $data['orders'] ?? [];
-            $detailsData = $data['details'] ?? [];
-            unset($data['orders'], $data['details']);
+    protected function afterCreate(): void
+    {
+        $reglement = $this->getRecord();
+        // On recharge TOUT ce dont on a besoin pour être sûr d'avoir les données fraîches.
+        $reglement->load('order.pointDeVente.lieuDeStockage', 'details.uniteDeVente');
 
-            $reglement = static::getModel()::create($data);
+        Log::info('--- DÉBUT DU TRAITEMENT POST-RÈGLEMENT ---');
 
-            if (!empty($ordersData)) {
-                $reglement->orders()->attach($ordersData);
-            }
-            if (!empty($detailsData)) {
-                $reglement->details()->createMany($detailsData);
-            }
-        });
+        try {
+            DB::transaction(function () use ($reglement) {
+                $lieuDeStockage = $reglement->order?->pointDeVente?->lieuDeStockage;
+                if (!$lieuDeStockage) {
+                    throw new Exception("Lieu de stockage introuvable.");
+                }
 
-        if ($reglement) {
-            // On déclenche manuellement notre logique après la sauvegarde.
-            (new ReglementObserver(new StockManager()))->process($reglement);
+                // 1. Déstockage final
+                Log::info('[afterCreate] Début du déstockage pour ' . $reglement->details->count() . ' article(s).');
+                foreach ($reglement->details as $detail) {
+                    $inventory = Inventory::where('lieu_de_stockage_id', $lieuDeStockage->id)
+                                        ->where('unite_de_vente_id', $detail->unite_de_vente_id)
+                                        ->firstOrFail();
+                    
+                    $inventory->decrement('quantite_stock', $detail->quantite_vendue);
+                }
+                Log::info('[afterCreate] Déstockage terminé.');
+
+                // 2. Mise à jour du statut de paiement
+                Log::info('[afterCreate] Mise à jour du statut de paiement...');
+                $order = $reglement->order;
+                if ($order) {
+                    // *** LA CORRECTION CRUCIALE EST ICI ***
+                    // On force le rechargement de la relation pour qu'elle inclue ce nouveau règlement
+                    $order->load('reglements'); 
+                    $order->updatePaymentStatus();
+                }
+                Log::info('[afterCreate] Statut de paiement mis à jour.');
+            });
+
+        } catch (Exception $e) {
+            Log::error("[afterCreate] ÉCHEC du traitement post-règlement : " . $e->getMessage());
+            throw $e;
         }
+        
+        Log::info('--- TRAITEMENT POST-RÈGLEMENT TERMINÉ ---');
+    }
 
-        return $reglement;
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
     }
 }

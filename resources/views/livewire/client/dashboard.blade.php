@@ -24,14 +24,12 @@
                         <h3 class="text-2xl font-teko text-white mb-4">Historique des commandes</h3>
                         <div class="grid sm:grid-cols-2 gap-4">
                             <input wire:model.live.debounce.300ms="search" type="text" class="form-input" placeholder="Rechercher par N° de commande...">
+                            
                             <select wire:model.live="statusFilter" class="form-input">
                                 <option value="">Tous les statuts</option>
-                                <option value="en_attente">En attente</option>
-                                <option value="validee">Validée</option>
-                                <option value="en_preparation">En préparation</option>
-                                <option value="en_cours_livraison">En cours de livraison</option>
-                                <option value="livree">Livrée</option>
-                                <option value="annulee">Annulée</option>
+                                @foreach($statuses as $status)
+                                    <option value="{{ $status->value }}">{{ $status->getLabel() }}</option>
+                                @endforeach
                             </select>
                         </div>
                     </div>
@@ -55,20 +53,34 @@
                                         <td class="px-6 py-4">{{ $order->created_at->format('d/m/Y') }}</td>
                                         <td class="px-6 py-4">{{ number_format($order->montant_total, 0, ',', ' ') }} FCFA</td>
                                         <td class="px-6 py-4 font-semibold {{ $order->remaining_balance > 0 ? 'text-amber-400' : 'text-green-400' }}">{{ number_format($order->remaining_balance, 0, ',', ' ') }} FCFA</td>
-                                        <td class="px-6 py-4"><span class="px-3 py-1 text-xs font-semibold rounded-full {{ match($order->statut) { 'livree' => 'bg-green-500/20 text-green-400', 'annulee' => 'bg-red-500/20 text-red-400', default => 'bg-amber-500/20 text-amber-400' } }}">{{ $order->statut }}</span></td>
+                                        
+                                        <td class="px-6 py-4">
+                                            <span class="px-3 py-1 text-xs font-semibold rounded-full
+                                                @switch($order->statut->getColor())
+                                                    @case('success') bg-green-500/20 text-green-400 @break
+                                                    @case('danger') bg-red-500/20 text-red-400 @break
+                                                    @case('warning') bg-amber-500/20 text-amber-400 @break
+                                                    @case('info') bg-blue-500/20 text-blue-400 @break
+                                                    @case('primary') bg-violet-500/20 text-violet-400 @break
+                                                    @default bg-gray-500/20 text-gray-400
+                                                @endswitch
+                                            ">
+                                                {{ $order->statut->getLabel() }}
+                                            </span>
+                                        </td>
+                                        
                                         <td class="px-6 py-4 text-right whitespace-nowrap text-sm font-medium">
-                                            @if($order->statut === 'en_attente')
+                                            @if($order->statut === \App\Enums\OrderStatusEnum::EN_ATTENTE)
                                                 <a href="{{ route('client.orders.edit', $order) }}" wire:navigate class="text-amber-400 hover:text-amber-300 mr-4">Modifier</a>
                                             @endif
-                                            @if($order->statut === 'en_cours_livraison')
-                                                <button wire:click="confirmReception({{ $order->id }})" wire:confirm="Êtes-vous sûr...?" class="text-green-400 hover:text-green-300 mr-4">Confirmer Réception</button>
+                                            @if($order->statut === \App\Enums\OrderStatusEnum::EN_COURS_LIVRAISON)
+                                                <button wire:click="confirmReception({{ $order->id }})" wire:confirm="Confirmez-vous avoir bien reçu cette commande ?" class="text-green-400 hover:text-green-300 mr-4">Confirmer Réception</button>
                                             @endif
-                                            @if($order->statut === 'livree')
-                                                 <a href="{{ route('client.orders.invoice', $order) }}" target="_blank" class="text-blue-400 hover:text-blue-300 mr-4">Facture</a>
+                                            @if($order->statut === \App\Enums\OrderStatusEnum::LIVREE)
+                                                <a href="{{ route('client.orders.invoice', $order) }}" target="_blank" class="text-blue-400 hover:text-blue-300 mr-4">Facture</a>
                                             @endif
                                             <a href="{{ route('client.orders.show', $order) }}" wire:navigate class="brand-red hover:text-red-400">Voir</a>
                                         </td>
-                                        
                                     </tr>
                                 @empty
                                     <tr><td colspan="6" class="text-center py-12 text-slate-400">Aucune commande ne correspond à votre recherche.</td></tr>

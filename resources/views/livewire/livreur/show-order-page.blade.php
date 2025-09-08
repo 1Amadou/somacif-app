@@ -23,13 +23,15 @@
             </div>
 
             <div class="mt-6">
-                @if($order->statut === 'en_preparation')
+                @if($order->statut === \App\Enums\OrderStatusEnum::EN_PREPARATION)
                     <button wire:click="startDelivery" wire:confirm="Confirmer la récupération du colis ?" class="w-full btn-primary text-lg">
-                        Colis Récupéré, Démarrer la Course
+                        Accepter la mission et démarrer la course
                     </button>
-                @elseif($order->statut === 'en_cours_livraison')
-                    <button wire:click="markAsDelivered" wire:confirm="Confirmer que le client a bien réceptionné la commande ?" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold tracking-widest uppercase py-4 rounded-md">
-                        Le Client a Confirmé la Réception
+                @elseif($order->statut === \App\Enums\OrderStatusEnum::EN_COURS_LIVRAISON)
+                     <p class="text-center text-blue-400 p-4 bg-blue-900/50 rounded-lg">En attente de confirmation du client...</p>
+                @elseif($order->statut === \App\Enums\OrderStatusEnum::LIVREE && is_null($order->livreur_confirmed_at))
+                     <button wire:click="confirmDelivery" wire:confirm="Confirmer la fin de cette mission ?" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold tracking-widest uppercase py-4 rounded-md">
+                        Le Client a confirmé - Terminer la mission
                     </button>
                 @else
                     <p class="text-center text-green-400 p-4 bg-green-900/50 rounded-lg">Cette mission est terminée.</p>

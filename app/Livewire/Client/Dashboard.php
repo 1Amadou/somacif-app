@@ -2,7 +2,9 @@
 
 namespace App\Livewire\Client;
 
+use App\Enums\OrderStatusEnum; // <-- AJOUT
 use App\Models\Client;
+use App\Models\Order; // <-- AJOUT
 use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -35,8 +37,11 @@ class Dashboard extends Component
     public function confirmReception($orderId)
     {
         $order = $this->client->orders()->find($orderId);
-        if ($order && $order->statut === 'en_cours_livraison') {
-            $order->confirmReception();
+        // CORRECTION : Utilisation de l'Enum
+        if ($order && $order->statut === OrderStatusEnum::EN_COURS_LIVRAISON) {
+            $order->statut = OrderStatusEnum::LIVREE;
+            $order->client_confirmed_at = now();
+            $order->save();
             session()->flash('success', 'Commande N°' . $order->numero_commande . ' marquée comme livrée !');
         }
     }
@@ -53,7 +58,7 @@ class Dashboard extends Component
         });
 
         $ordersQuery = $this->client->orders()
-            ->with('livreur') // On pré-charge le livreur
+            ->with('livreur')
             ->when($this->search, fn($q) => $q->where('numero_commande', 'like', '%' . $this->search . '%'))
             ->when($this->statusFilter, fn($q) => $q->where('statut', $this->statusFilter))
             ->latest();
@@ -66,6 +71,8 @@ class Dashboard extends Component
         return view('livewire.client.dashboard', [
             'allOrders' => $allOrders,
             'orders' => $paginatedOrders,
+            // AJOUT : On envoie les statuts à la vue pour le filtre
+            'statuses' => OrderStatusEnum::cases(),
         ])->layout('components.layouts.app');
     }
 }

@@ -3,15 +3,15 @@
 namespace App\Filament\Pages;
 
 use App\Models\Arrivage;
+use App\Models\DetailReglement;
 use App\Models\Inventory;
-use App\Models\Reglement;
-use App\Models\UniteDeVente;
+use App\Models\LieuDeStockage;
+use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
 use Filament\Pages\Page;
-use Illuminate\Database\Eloquent\Builder;
 
 class SuiviParArrivage extends Page implements HasForms
 {
@@ -20,7 +20,7 @@ class SuiviParArrivage extends Page implements HasForms
     protected static ?string $navigationIcon = 'heroicon-o-document-chart-bar';
     protected static ?string $navigationGroup = 'Gestion de Stock';
     protected static ?string $navigationLabel = 'Suivi par Arrivage';
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 4; // Mis à jour pour être après les transferts
     protected static string $view = 'filament.pages.suivi-par-arrivage';
 
     public ?int $selectedArrivageId = null;
@@ -44,79 +44,87 @@ class SuiviParArrivage extends Page implements HasForms
             return null;
         }
 
-        $arrivage = Arrivage::with('fournisseur')->find($this->selectedArrivageId);
-        if (!$arrivage || !is_array($arrivage->details_produits)) {
+        $arrivage = Arrivage::with('fournisseur', 'items.uniteDeVente')->find($this->selectedArrivageId);
+        if (!$arrivage) {
             return null;
         }
 
         $reportData = [];
-        $totalCoutAchat = 0; // <-- NOUVEAU
-        $totalMontantVentes = 0; // <-- NOUVEAU
-        
-        $uniteDeVenteIds = collect($arrivage->details_produits)->pluck('unite_de_vente_id')->unique()->toArray();
+        $entrepotId = LieuDeStockage::where('type', 'entrepot')->value('id');
+        $pointDeVenteIds = LieuDeStockage::where('type', 'point_de_vente')->pluck('id');
 
-        $unitesDeVente = UniteDeVente::whereIn('id', $uniteDeVenteIds)->get()->keyBy('id');
-        $inventories = Inventory::whereIn('unite_de_vente_id', $uniteDeVenteIds)->get()->groupBy('unite_de_vente_id');
+        // Calculs pour les totaux
+        $totalCoutAchat = 0;
+        $totalQuantiteRecue = 0;
+        $totalStockRestantGlobal = 0;
+        $totalRevenuGenere = 0;
+        $totalCoutMarchandiseVendue = 0;
 
-        // On cherche les ventes effectuées directement ou via des règlements
-        $ventesDirectes = \App\Models\VenteDirecteItem::whereHas('venteDirecte', fn(Builder $q) => $q->whereBetween('date_vente', [$arrivage->date_arrivage, now()]))
-            ->whereIn('unite_de_vente_id', $uniteDeVenteIds)
-            ->get()
-            ->groupBy('unite_de_vente_id');
-
-        $ventesReglements = \App\Models\ReglementItem::whereHas('reglement', fn(Builder $q) => $q->whereBetween('date_reglement', [$arrivage->date_arrivage, now()]))
-            ->whereIn('unite_de_vente_id', $uniteDeVenteIds)
-            ->get()
-            ->groupBy('unite_de_vente_id');
-
-        foreach ($arrivage->details_produits as $detail) {
-            $uniteId = $detail['unite_de_vente_id'];
-            $unite = $unitesDeVente->get($uniteId);
+        foreach ($arrivage->items as $item) {
+            $unite = $item->uniteDeVente;
             if (!$unite) continue;
 
-            $quantiteRecue = $detail['quantite'] ?? 0;
-            $prixAchatUnitaire = $detail['prix_achat_unitaire'] ?? 0; // <-- NOUVEAU
+            $quantiteRecue = $item->quantite;
+            $coutAchatUnitaire = $item->prix_achat_unitaire;
 
-            // Calcul de la quantité totale vendue
-            $quantiteVendueDirecte = $ventesDirectes->get($uniteId, collect())->sum('quantite');
-            $quantiteVendueReglement = $ventesReglements->get($uniteId, collect())->sum('quantite_vendue');
-            $quantiteVendueTotale = $quantiteVendueDirecte + $quantiteVendueReglement;
-
-            // Calcul du montant total des ventes
-            $montantVentesDirectes = $ventesDirectes->get($uniteId, collect())->sum(fn($i) => $i->quantite * $i->prix_unitaire);
-            $montantVentesReglements = $ventesReglements->get($uniteId, collect())->sum(fn($i) => $i->quantite_vendue * $i->prix_de_vente_unitaire);
-            $montantVentesTotales = $montantVentesDirectes + $montantVentesReglements;
+            // 1. Calcul des stocks actuels
+            $stockPrincipal = Inventory::where('unite_de_vente_id', $unite->id)->where('lieu_de_stockage_id', $entrepotId)->value('quantite_stock') ?? 0;
+            $stockClients = Inventory::where('unite_de_vente_id', $unite->id)->whereIn('lieu_de_stockage_id', $pointDeVenteIds)->sum('quantite_stock');
+            $stockTotalActuel = $stockPrincipal + $stockClients;
             
-            // Stock restant chez TOUS les clients pour cette unité
-            $stockChezClients = $inventories->get($uniteId, collect())->sum('quantite_stock');
-            
-            $stockTotalActuel = $unite->stock + $stockChezClients;
-
-            // Calculs pour les totaux globaux
-            $totalCoutAchat += $quantiteRecue * $prixAchatUnitaire;
-            $totalMontantVentes += $montantVentesTotales;
+            // 2. Calcul des ventes et revenus pour cet article
+            $ventes = DetailReglement::where('unite_de_vente_id', $unite->id)->get();
+            $quantiteVendue = $ventes->sum('quantite_vendue');
+            $revenuGenere = $ventes->sum(fn($vente) => $vente->quantite_vendue * $vente->prix_de_vente_unitaire);
 
             $reportData[] = [
-                'nom_produit' => $unite->nom_unite . ' (' . $unite->calibre . ')',
-                'quantite_recue_arrivage' => $quantiteRecue,
-                'prix_achat_unitaire' => $prixAchatUnitaire, // <-- NOUVEAU
-                'quantite_vendue_total' => $quantiteVendueTotale,
-                'montant_ventes_total' => $montantVentesTotales,
-                'stock_chez_clients_total' => $stockChezClients,
-                'stock_entrepot_actuel' => $unite->stock,
+                'nom_complet' => $unite->nom_complet,
+                'quantite_recue' => $quantiteRecue,
+                'cout_achat_total' => $quantiteRecue * $coutAchatUnitaire,
+                'stock_entrepot_actuel' => $stockPrincipal,
+                'stock_clients_actuel' => $stockClients,
                 'stock_total_actuel' => $stockTotalActuel,
+                'quantite_vendue' => $quantiteVendue,
+                'revenu_genere' => $revenuGenere,
+                'marge_sur_ventes' => $revenuGenere - ($quantiteVendue * $coutAchatUnitaire),
             ];
+
+            // Mise à jour des totaux globaux
+            $totalCoutAchat += $quantiteRecue * $coutAchatUnitaire;
+            $totalQuantiteRecue += $quantiteRecue;
+            $totalStockRestantGlobal += $stockTotalActuel;
+            $totalRevenuGenere += $revenuGenere;
+            $totalCoutMarchandiseVendue += $quantiteVendue * $coutAchatUnitaire;
         }
-        
-        $margeBrute = $totalMontantVentes - $totalCoutAchat;
-        $benefice = $margeBrute; // Pour le moment, pas d'autres coûts
+
+        $statut = ($totalStockRestantGlobal == 0 && $totalQuantiteRecue > 0) ? 'Clôturé' : 'En cours';
 
         return [
             'arrivage' => $arrivage,
             'reportData' => $reportData,
+            'statut' => $statut,
             'totalCoutAchat' => $totalCoutAchat,
-            'totalMontantVentes' => $totalMontantVentes,
-            'benefice' => $benefice,
+            'totalQuantiteRecue' => $totalQuantiteRecue,
+            'totalStockRestant' => $totalStockRestantGlobal,
+            'totalQuantiteSortie' => $totalQuantiteRecue - $totalStockRestantGlobal,
+            'totalRevenuGenere' => $totalRevenuGenere,
+            'margeGlobale' => $totalRevenuGenere - $totalCoutMarchandiseVendue,
+        ];
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('exportPdf')
+                ->label('Exporter en PDF')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('gray')
+                ->visible(fn () => $this->selectedArrivageId !== null)
+                // L'action réelle nécessitera une librairie comme barryvdh/laravel-dompdf
+                ->action(function () {
+                    // Logique d'exportation à implémenter ici
+                    $this->dispatch('print-report');
+                }),
         ];
     }
 }

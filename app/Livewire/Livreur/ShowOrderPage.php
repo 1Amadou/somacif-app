@@ -2,8 +2,8 @@
 
 namespace App\Livewire\Livreur;
 
+use App\Enums\OrderStatusEnum; // <-- AJOUT
 use App\Models\Order;
-use App\Notifications\ClientOrderInTransitNotification;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 
@@ -13,37 +13,37 @@ class ShowOrderPage extends Component
 
     public function mount(Order $order)
     {
-        // Sécurité : le livreur ne peut voir que les commandes qui lui sont assignées.
         if ($order->livreur_id !== Auth::guard('livreur')->id()) {
             abort(403, 'Accès non autorisé');
         }
         $this->order = $order->load(['items.uniteDeVente.product', 'client', 'pointDeVente']);
     }
 
-    // ACTION : Le livreur a récupéré le colis
+    // ACTION : Le livreur accepte la mission
     public function startDelivery()
     {
-        if ($this->order->statut === 'en_preparation') {
-            $this->order->update(['statut' => 'en_cours_livraison']);
+        // CORRECTION : On utilise l'Enum
+        if ($this->order->statut === OrderStatusEnum::EN_PREPARATION) {
+            $this->order->update(['statut' => OrderStatusEnum::EN_COURS_LIVRAISON]);
             
-            // Notifier le client que sa commande est en route
-            $this->order->client->notify(new ClientOrderInTransitNotification($this->order));
-
-            session()->flash('success', 'Livraison démarrée ! Le client a été notifié.');
+            // La notification est maintenant gérée par OrderObserver, on n'a plus besoin du code ici.
+            
+            session()->flash('success', 'Livraison démarrée ! Le client sera notifié.');
             return redirect()->route('livreur.dashboard');
         }
     }
 
-    // ACTION : Le livreur a livré le colis
-    public function markAsDelivered()
+    // ACTION : Le livreur confirme la livraison (après le client)
+    public function confirmDelivery()
     {
-        if ($this->order->statut === 'en_cours_livraison') {
-            $this->order->update(['statut' => 'livree', 'livreur_confirmed_at' => now()]);
+        // CORRECTION : La condition a été améliorée.
+        // Le livreur ne peut confirmer que si le client a déjà confirmé (statut "Livrée")
+        if ($this->order->statut === OrderStatusEnum::LIVREE) {
+            $this->order->update(['livreur_confirmed_at' => now()]);
             
-            // Notifier l'admin que la livraison est terminée
-            // ...
-
-            session()->flash('success', 'Commande marquée comme livrée !');
+            // La notification à l'admin est gérée par OrderObserver.
+            
+            session()->flash('success', 'Commande marquée comme livrée ! Mission terminée.');
             return redirect()->route('livreur.dashboard');
         }
     }

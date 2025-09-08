@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ClientResource\RelationManagers;
 
 use App\Filament\Resources\ReglementResource;
+use App\Models\Reglement; // <-- AJOUT pour le typage
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -50,18 +51,13 @@ class ReglementsRelationManager extends RelationManager
                     ->icon('heroicon-o-plus-circle'),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make() // Utilisation de l'action View
-                    ->url(fn ($record): string => ReglementResource::getUrl('view', ['record' => $record])),
-                Tables\Actions\EditAction::make() // Ajout d'une action d'édition explicite
-                    ->url(fn ($record): string => ReglementResource::getUrl('edit', ['record' => $record])),
+                Tables\Actions\ViewAction::make()
+                    ->url(fn (Reglement $record): string => ReglementResource::getUrl('view', ['record' => $record])),
+                Tables\Actions\EditAction::make()
+                    ->url(fn (Reglement $record): string => ReglementResource::getUrl('edit', ['record' => $record])),
             ])
             ->emptyStateActions([
                 Tables\Actions\CreateAction::make()->url(fn () => ReglementResource::getUrl('create', ['client_id' => $this->getOwnerRecord()->id])),
             ]);
-    }
-
-    public function isReadOnly(): bool
-    {
-        return true;
     }
 }

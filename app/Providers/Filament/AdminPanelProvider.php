@@ -19,6 +19,7 @@ use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use App\Filament\Pages\StockEntrepôtPrincipal;
 
 
 use Illuminate\Support\Facades\Schema; // Ajoute cette ligne en haut
@@ -27,6 +28,7 @@ class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
+        
         // Vérifie que la table 'pages' existe avant d'interroger la base
         $logoUrl = null;
 
@@ -67,9 +69,11 @@ class AdminPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                
             ])
             ->authMiddleware([
                 Authenticate::class,
             ]);
+            
     }
 }

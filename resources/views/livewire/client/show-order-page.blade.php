@@ -6,6 +6,31 @@
             </a>
             <h1 class="text-5xl font-teko uppercase text-white mt-2">Détail de la Commande</h1>
             <p class="font-mono text-slate-300">{{ $order->numero_commande }}</p>
+            
+            <div class="mt-6 space-y-4">
+                @if (session()->has('message'))
+                    <div class="bg-green-900/50 border border-green-700 text-green-300 p-4 rounded-lg text-center">
+                        {{ session('message') }}
+                    </div>
+                @endif
+
+                <div class="flex items-center gap-4">
+                    @if ($order->statut === \App\Enums\OrderStatusEnum::EN_COURS_LIVRAISON)
+                        <button wire:click="confirmReception" wire:confirm="Confirmez-vous avoir bien reçu cette commande ?" class="btn btn-success">
+                            <i class="fas fa-check-circle mr-2"></i>Confirmer la réception
+                        </button>
+                    @endif
+
+                    @if ($order->statut === \App\Enums\OrderStatusEnum::EN_ATTENTE)
+                        <a href="{{ route('client.orders.edit', $order) }}" wire:navigate class="btn btn-warning">
+                           <i class="fas fa-pencil-alt mr-2"></i>Modifier la commande
+                        </a>
+                        <button wire:click="cancelOrder" wire:confirm="Êtes-vous sûr de vouloir annuler cette commande ?" class="btn btn-danger">
+                           <i class="fas fa-times-circle mr-2"></i>Annuler la commande
+                        </button>
+                    @endif
+                </div>
+            </div>
         </div>
 
         <div class="grid lg:grid-cols-3 gap-8">
@@ -35,7 +60,7 @@
                     </div>
                 </div>
 
-                {{-- NOUVELLE SECTION : Historique des Versements --}}
+                {{-- Section : Historique des Versements --}}
                 <div class="bg-dark-card border border-border-dark rounded-lg">
                     <div class="p-6 border-b border-border-dark">
                         <h3 class="text-2xl font-teko text-white">Historique des Versements sur cette Commande</h3>
@@ -57,7 +82,6 @@
                                         <td class="px-6 py-4 text-white capitalize">{{ $reglement->methode_paiement }}</td>
                                         <td class="px-6 py-4 text-right font-mono text-green-400">{{ number_format($reglement->montant_verse, 0, ',', ' ') }} FCFA</td>
                                         <td class="px-6 py-4 text-right">
-                                            {{-- Ce lien fonctionnera une fois que la logique dans InvoiceController sera en place --}}
                                             <a href="{{ route('client.reglements.bordereau', $reglement) }}" target="_blank" class="font-bold text-sm text-blue-400 hover:text-blue-300">Voir le Bordereau</a>
                                         </td>
                                     </tr>
@@ -76,7 +100,9 @@
                     <h3 class="text-2xl font-teko text-white mb-4 border-b border-border-dark pb-4">Résumé</h3>
                     <div class="space-y-3 text-sm">
                         <p class="flex justify-between text-slate-300"><span>Date de Commande :</span><span class="font-bold text-white">{{ $order->created_at->format('d/m/Y') }}</span></p>
-                        <p class="flex justify-between text-slate-300"><span>Statut Commande :</span><span class="font-bold text-white capitalize">{{ $order->statut }}</span></p>
+                        
+                        <p class="flex justify-between text-slate-300"><span>Statut Commande :</span><span class="font-bold text-white">{{ $order->statut->getLabel() }}</span></p>
+                        
                         <p class="flex justify-between text-slate-300"><span>Statut Paiement :</span><span class="font-bold text-white capitalize">{{ $order->statut_paiement }}</span></p>
                         <p class="flex justify-between text-slate-300"><span>Point de Vente :</span><span class="font-bold text-white text-right">{{ $order->pointDeVente->nom }}</span></p>
                         @if($order->livreur)

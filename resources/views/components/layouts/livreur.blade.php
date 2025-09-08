@@ -17,7 +17,7 @@
             </div>
             <div>
                 @auth('livreur')
-                    <form method="POST" action="{{ route('livreur.logout') }}">
+                    <form method="POST" action="{{ route('logout') }}">
                         @csrf
                         <button type="submit" class="text-sm font-semibold text-slate-300 hover:text-white transition-colors">
                             <i class="fas fa-sign-out-alt mr-1"></i> Se Déconnecter

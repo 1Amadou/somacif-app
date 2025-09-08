@@ -19,13 +19,10 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use App\Filament\Resources\PointDeVenteResource;
 
 class ArrivageResource extends Resource
 {
     protected static ?string $model = Arrivage::class;
-
     protected static ?string $navigationIcon = 'heroicon-o-archive-box-arrow-down';
     protected static ?string $navigationGroup = 'Gestion de Stock';
     protected static ?int $navigationSort = 1;
@@ -39,89 +36,73 @@ class ArrivageResource extends Resource
                     ->schema([
                         Select::make('fournisseur_id')
                             ->relationship('fournisseur', 'nom_entreprise')
-                            ->searchable()
-                            ->preload()
-                            ->required()
-                            ->label('Fournisseur'),
+                            ->searchable()->preload()->required()->label('Fournisseur'),
                         
                         TextInput::make('numero_bon_livraison')
-                            ->required()
-                            ->unique(ignoreRecord: true) // Ajout de l'unicité
-                            ->maxLength(255)
+                            ->required()->unique(ignoreRecord: true)->maxLength(255)
                             ->label('Numéro du Bon de Livraison'),
 
                         DatePicker::make('date_arrivage')
-                            ->required()
-                            ->default(now())
-                            ->label('Date de l\'arrivage'),
-                    ])->columns(3), // On passe à 3 colonnes pour une meilleure lisibilité
+                            ->required()->default(now())->label('Date de l\'arrivage'),
+                    ])->columns(3),
 
                 Section::make('Détails des Produits Reçus')
                     ->schema([
-                        Repeater::make('details_produits')
+                        // *** MODIFICATION TECHNIQUE IMPORTANTE ***
+                        // On renomme le repeater en 'items' pour qu'il corresponde
+                        // au nom de la relation Eloquent ('items') dans le modèle Arrivage.
+                        // Cela simplifie la communication avec notre ArrivageObserver.
+                        Repeater::make('items')
+                            ->relationship() // On lie directement le repeater à la relation
                             ->label('Produits')
                             ->schema([
                                 Select::make('unite_de_vente_id')
                                     ->label('Unité de Vente')
-                                    ->options(UniteDeVente::query()->pluck('nom_unite', 'id'))
-                                    ->searchable()
-                                    ->required()
-                                    ->exists('unite_de_ventes', 'id')
-                                    ->live(onBlur: true),
+                                    // Utilise 'nom_complet' pour un affichage sans ambiguïté.
+                                    ->options(UniteDeVente::query()->pluck('nom_complet', 'id'))
+                                    ->searchable()->required()->live(onBlur: true)
+                                    // Empêche de sélectionner deux fois le même article.
+                                    ->distinct()
+                                    ->disableOptionsWhenSelectedInSiblingRepeaterItems(),
                                 
                                 TextInput::make('quantite')
-                                    ->label('Quantité (en unités)')
-                                    ->numeric()
-                                    ->required()
-                                    ->minValue(1)
-                                    ->live(onBlur: true),
+                                    ->label('Quantité Reçue')
+                                    ->numeric()->required()->minValue(1)->live(onBlur: true),
                                 
-                                TextInput::make('prix_achat_unitaire') // <-- NOUVEAU CHAMP
-                                    ->label('Prix d\'Achat Unitaire')
-                                    ->prefix('FCFA')
-                                    ->numeric()
-                                    ->required()
-                                    ->live(onBlur: true), // 'live' pour les calculs en temps réel
+                                TextInput::make('prix_achat_unitaire')
+                                    ->label('Coût d\'Achat Unitaire')
+                                    ->prefix('FCFA')->numeric()->required()->live(onBlur: true),
                             ])
-                            ->columns(3) // Changement ici aussi
+                            ->columns(3)
                             ->addActionLabel('Ajouter un produit')
+                            ->reorderable(true)->collapsible()
+                            ->deleteAction(fn (Forms\Components\Actions\Action $action) => $action->after(fn (Get $get, Set $set) => self::updateTotals($get, $set)))
                             ->afterStateUpdated(function (Get $get, Set $set) {
                                 self::updateTotals($get, $set);
-                            })
-                            ->deleteAction(
-                                fn (Forms\Components\Actions\Action $action) => $action->after(fn (Get $get, Set $set) => self::updateTotals($get, $set)),
-                            )
-                            ->reorderable(true) // Rendre le repeater ordonnable
-                            ->collapsible(),
+                            }),
                     ]),
                 
                 Section::make('Résumé et Notes')
                     ->schema([
-                        TextInput::make('montant_total_arrivage') // <-- NOUVEAU CHAMP
-                            ->label('Montant Total de l\'Arrivage')
-                            ->prefix('FCFA')
-                            ->numeric()
-                            ->readOnly()
-                            ->default(0)
-                            ->dehydrated(true), // Assurez-vous que la valeur est sauvegardée
+                        TextInput::make('montant_total_arrivage')
+                            ->label('Coût Total de l\'Arrivage')
+                            ->prefix('FCFA')->numeric()->readOnly()->default(0),
                         
-                        TextInput::make('total_quantite') // Ancien champ renommé pour plus de clarté
-                            ->label('Quantité Totale Reçue')
-                            ->numeric()
-                            ->readOnly()
-                            ->default(0),
+                        TextInput::make('total_quantite')
+                            ->label('Quantité Totale Reçue (unités)')
+                            ->numeric()->readOnly()->default(0),
 
-                        Textarea::make('notes')
-                            ->columnSpanFull(),
+                        Textarea::make('notes')->columnSpanFull(),
                     ])->columns(2),
             ]);
     }
 
     public static function updateTotals(Get $get, Set $set): void
     {
-        $details = $get('details_produits');
+        // On s'assure de lire les données du repeater avec le bon nom ('items').
+        $details = $get('items');
         $totalQuantite = 0;
-        $montantTotal = 0; // <-- NOUVEAU
+        $montantTotal = 0;
 
         if (is_array($details)) {
             foreach ($details as $item) {
@@ -129,41 +110,25 @@ class ArrivageResource extends Resource
                 $prixAchat = $item['prix_achat_unitaire'] ?? 0;
                 
                 $totalQuantite += $quantite;
-                $montantTotal += $quantite * $prixAchat; // Calcul du montant total
+                $montantTotal += $quantite * $prixAchat;
             }
         }
         $set('total_quantite', $totalQuantite);
         $set('montant_total_arrivage', $montantTotal);
     }
     
-    // ... (Le reste des méthodes `table`, `getRelations`, `getPages` restent identiques)
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                TextColumn::make('fournisseur.nom_entreprise')
-                    ->searchable()
-                    ->sortable()
-                    ->label('Fournisseur'),
-                TextColumn::make('numero_bon_livraison')
-                    ->searchable()
-                    ->label('N° Bon Livraison'),
-                TextColumn::make('date_arrivage')
-                    ->date('d/m/Y')
-                    ->sortable()
-                    ->label('Date'),
-                TextColumn::make('montant_total_arrivage') // <-- NOUVEAU
-                    ->label('Coût Total')
-                    ->money('XOF')
-                    ->sortable(),
-                TextColumn::make('total_quantite') // Ancien champ renommé
-                    ->label('Qté Totale')
-                    ->sortable()
-                    ->default('N/A'),
-                TextColumn::make('user.name')
-                    ->label('Enregistré par')
-                    ->sortable(),
+                TextColumn::make('fournisseur.nom_entreprise')->searchable()->sortable()->label('Fournisseur'),
+                TextColumn::make('numero_bon_livraison')->searchable()->label('N° Bon Livraison'),
+                TextColumn::make('date_arrivage')->date('d/m/Y')->sortable()->label('Date'),
+                TextColumn::make('montant_total_arrivage')->label('Coût Total')->money('XOF')->sortable(),
+                TextColumn::make('total_quantite')->label('Qté Totale')->sortable(),
+                TextColumn::make('user.name')->label('Enregistré par')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->defaultSort('date_arrivage', 'desc')
             ->filters([
                 //
             ])
@@ -180,9 +145,7 @@ class ArrivageResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
     
     public static function getPages(): array
