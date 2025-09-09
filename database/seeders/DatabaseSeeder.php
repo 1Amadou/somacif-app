@@ -29,7 +29,7 @@ class DatabaseSeeder extends Seeder
             ClientSeeder::class,
             LivreurSeeder::class,
             PageSeeder::class,
-            VenteDirecteSetupSeeder::class,
+            // VenteDirecteSetupSeeder::class,
             LieuDeStockageSeeder::class
             
         ]);

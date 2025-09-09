@@ -15,9 +15,11 @@
                             <div class="flex-grow">
                                 <p class="font-bold text-white">{{ $item['name'] }}</p>
                                 <p class="text-sm text-slate-400">{{ number_format($item['price'], 0, ',', ' ') }} FCFA / unité</p>
+                                {{-- AMÉLIORATION : On affiche le stock --}}
+                                <p class="text-xs text-blue-400">Stock disponible: {{ $item['stock_dispo'] }}</p>
                             </div>
                             <div class="flex items-center gap-4">
-                                <input type="number" min="1" wire:model.live="items.{{ $itemId }}.quantity" class="w-20 form-input text-center">
+                                <input type="number" min="1" max="{{ $item['stock_dispo'] }}" wire:model.live="items.{{ $itemId }}.quantity" class="w-20 form-input text-center">
                                 <button wire:click="removeItem({{ $itemId }})" class="text-red-500 hover:text-red-400"><i class="fas fa-trash"></i></button>
                             </div>
                         </li>

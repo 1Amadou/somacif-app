@@ -2,11 +2,13 @@
 
 namespace App\Livewire\Client;
 
-use App\Enums\OrderStatusEnum; // <-- AJOUT : On importe notre dictionnaire
+use App\Enums\OrderStatusEnum;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\UniteDeVente; // <-- Ajout de l'import
 use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
+use Illuminate\Validation\Rule; // <-- Ajout de l'import
 
 class EditOrderPage extends Component
 {
@@ -16,7 +18,6 @@ class EditOrderPage extends Component
 
     public function mount(Order $order)
     {
-        // CORRECTION : On utilise notre Enum pour une vérification robuste
         if ($order->client_id !== Auth::guard('client')->id() || $order->statut !== OrderStatusEnum::EN_ATTENTE) {
             session()->flash('error', 'Cette commande ne peut plus être modifiée.');
             return redirect()->route('client.dashboard');
@@ -27,27 +28,19 @@ class EditOrderPage extends Component
         foreach ($this->order->items as $item) {
             $this->items[$item->id] = [
                 'id' => $item->id,
-                'name' => $item->uniteDeVente->product->nom . ' (' . $item->uniteDeVente->nom_unite . ')',
+                'unite_de_vente_id' => $item->unite_de_vente_id, // <-- On garde l'ID pour la validation
+                'name' => $item->uniteDeVente->nom_complet,
                 'quantity' => $item->quantite,
                 'price' => $item->prix_unitaire,
-                'subtotal' => $item->quantite * $item->prix_unitaire
+                'subtotal' => $item->quantite * $item->prix_unitaire,
+                'stock_dispo' => $item->uniteDeVente->stock_entrepôt_principal // <-- On stocke l'info
             ];
         }
         $this->calculateTotal();
     }
 
-    // Se déclenche quand une quantité est modifiée
     public function updatedItems($value, $key)
     {
-        $itemId = explode('.', $key)[0];
-        $quantity = (int) $value;
-
-        if ($quantity < 1) {
-            $quantity = 1;
-            $this->items[$itemId]['quantity'] = 1;
-        }
-
-        $this->items[$itemId]['subtotal'] = $quantity * $this->items[$itemId]['price'];
         $this->calculateTotal();
     }
 
@@ -59,24 +52,36 @@ class EditOrderPage extends Component
 
     public function calculateTotal()
     {
+        foreach($this->items as $id => $item) {
+            $this->items[$id]['subtotal'] = $item['quantity'] * $item['price'];
+        }
         $this->newTotal = array_sum(array_column($this->items, 'subtotal'));
     }
 
     public function saveChanges()
     {
+        // --- AMÉLIORATION : Validation du stock avant de sauvegarder ---
+        $rules = [];
+        foreach ($this->items as $itemId => $itemData) {
+            $unite = UniteDeVente::find($itemData['unite_de_vente_id']);
+            $stockDisponible = $unite ? $unite->stock_entrepôt_principal : 0;
+            
+            $rules["items.{$itemId}.quantity"] = "required|numeric|min:1|max:{$stockDisponible}";
+        }
+        
+        $this->validate($rules, [
+            'max' => 'Le stock pour :attribute est insuffisant (:max disponible).'
+        ]);
+
         foreach ($this->items as $itemId => $itemData) {
             OrderItem::find($itemId)->update(['quantite' => $itemData['quantity']]);
         }
         
-        // Supprime les articles qui ont été retirés
         $currentItemIds = array_keys($this->items);
         $this->order->items()->whereNotIn('id', $currentItemIds)->delete();
 
-        // Met à jour le total de la commande
         $this->order->update(['montant_total' => $this->newTotal]);
         
-        // Notifier l'admin serait une bonne idée ici
-
         session()->flash('success', 'Votre commande a été mise à jour avec succès.');
         return redirect()->route('client.orders.show', $this->order);
     }

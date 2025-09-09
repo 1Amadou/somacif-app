@@ -15,8 +15,8 @@ class FournisseurResource extends Resource
     protected static ?string $model = Fournisseur::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-truck';
-    protected static ?string $navigationGroup = 'Partenaires';
-    protected static ?int $navigationSort = 2;
+    protected static ?string $navigationGroup = 'Clients & Partenaires'; // Changement de groupe pour la cohérence
+    protected static ?int $navigationSort = 4;
 
     public static function form(Form $form): Form
     {

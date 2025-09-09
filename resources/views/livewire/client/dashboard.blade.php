@@ -13,15 +13,72 @@
 
         <div class="grid lg:grid-cols-3 gap-8">
             <div class="lg:col-span-2 space-y-8">
+                {{-- CORRECTION : On utilise les accesseurs robustes du modèle Order --}}
                 <div class="grid sm:grid-cols-3 gap-6">
                     <div class="stat-card p-6 rounded-lg text-center"><span class="text-5xl font-teko brand-red">{{ $allOrders->count() }}</span><p class="text-white mt-1">Commandes Passées</p></div>
-                    <div class="stat-card p-6 rounded-lg text-center"><span class="text-5xl font-teko brand-red">{{ $allOrders->where('remaining_balance', '>', 0)->count() }}</span><p class="text-white mt-1">Factures en Attente</p></div>
-                    <div class="stat-card p-6 rounded-lg text-center"><span class="text-5xl font-teko brand-red">{{ number_format($allOrders->sum('remaining_balance'), 0, ',', ' ') }}</span><p class="text-white mt-1">Solde Total Dû (FCFA)</p></div>
+                    <div class="stat-card p-6 rounded-lg text-center"><span class="text-5xl font-teko brand-red">{{ $allOrders->where('solde_restant_a_payer', '>', 0)->count() }}</span><p class="text-white mt-1">Factures en Attente</p></div>
+                    <div class="stat-card p-6 rounded-lg text-center"><span class="text-5xl font-teko brand-red">{{ number_format($allOrders->sum('solde_restant_a_payer'), 0, ',', ' ') }}</span><p class="text-white mt-1">Solde Total Dû (FCFA)</p></div>
                 </div>
+
+                {{-- AMÉLIORATION : Ajout de statistiques sur les cartons pour plus de clarté --}}
+                <div class="bg-dark-card border border-border-dark rounded-lg p-6">
+                    <h3 class="text-2xl font-teko text-white mb-4">Situation de Votre Stock Actuel</h3>
+                    <div class="grid sm:grid-cols-3 gap-6 text-center">
+                        <div>
+                            <span class="text-4xl font-teko text-white">{{ number_format($allOrders->sum('quantite_actuelle')) }}</span>
+                            <p class="text-slate-400 mt-1">Cartons chez vous</p>
+                        </div>
+                        <div>
+                            <span class="text-4xl font-teko text-green-400">{{ number_format($allOrders->sum('quantite_reglee')) }}</span>
+                            <p class="text-slate-400 mt-1">Cartons déjà vendus</p>
+                        </div>
+                        <div>
+                            <span class="text-4xl font-teko text-amber-400">{{ number_format($allOrders->sum('quantite_restante_a_payer')) }}</span>
+                            <p class="text-slate-400 mt-1">Cartons à vendre</p>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- NOUVELLE SECTION : DÉTAIL DU STOCK CLIENT --}}
+                @if($stockDetails->isNotEmpty())
+                <div class="bg-dark-card border border-border-dark rounded-lg">
+                    <div class="p-6 border-b border-border-dark">
+                        <h3 class="text-2xl font-teko text-white">Détail de Votre Stock par Produit</h3>
+                        <p class="text-sm text-slate-400">Inventaire consolidé de tous vos points de vente.</p>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="text-sm uppercase text-slate-400">
+                                <tr>
+                                    <th class="px-6 py-4">Produit</th>
+                                    <th class="px-6 py-4">Unité de Vente</th>
+                                    <th class="px-6 py-4 text-right">Quantité en Stock</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($stockDetails as $stock)
+                                    <tr class="border-t border-border-dark">
+                                        <td class="px-6 py-4 font-bold text-white">
+                                            {{ $stock->uniteDeVente->product->nom ?? 'Produit Inconnu' }}
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-300">
+                                            {{ $stock->uniteDeVente->nom_complet ?? 'N/A' }}
+                                        </td>
+                                        <td class="px-6 py-4 text-right font-mono text-2xl text-white">
+                                            {{ number_format($stock->total_stock, 0, ',', ' ') }}
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                @endif
 
                 <div class="bg-dark-card border border-border-dark rounded-lg">
                     <div class="p-6 border-b border-border-dark">
-                        <h3 class="text-2xl font-teko text-white mb-4">Historique des commandes</h3>
+                        <h3 class="text-2xl font-teko text-white mb-4">Historique de vos commandes</h3>
                         <div class="grid sm:grid-cols-2 gap-4">
                             <input wire:model.live.debounce.300ms="search" type="text" class="form-input" placeholder="Rechercher par N° de commande...">
                             
@@ -33,6 +90,7 @@
                             </select>
                         </div>
                     </div>
+                    
 
                     <div class="overflow-x-auto">
                         <table class="w-full text-left">
@@ -40,7 +98,7 @@
                                 <tr>
                                     <th class="px-6 py-4">N° Commande</th>
                                     <th class="px-6 py-4">Date</th>
-                                    <th class="px-6 py-4">Montant</th>
+                                    <th class="px-6 py-4">Montant Total</th>
                                     <th class="px-6 py-4">Solde Restant</th>
                                     <th class="px-6 py-4">Statut</th>
                                     <th class="px-6 py-4"></th>
@@ -52,7 +110,8 @@
                                         <td class="px-6 py-4 font-mono text-white">{{ $order->numero_commande }}</td>
                                         <td class="px-6 py-4">{{ $order->created_at->format('d/m/Y') }}</td>
                                         <td class="px-6 py-4">{{ number_format($order->montant_total, 0, ',', ' ') }} FCFA</td>
-                                        <td class="px-6 py-4 font-semibold {{ $order->remaining_balance > 0 ? 'text-amber-400' : 'text-green-400' }}">{{ number_format($order->remaining_balance, 0, ',', ' ') }} FCFA</td>
+                                        {{-- CORRECTION : On utilise l'accesseur solde_restant_a_payer --}}
+                                        <td class="px-6 py-4 font-semibold {{ $order->solde_restant_a_payer > 0 ? 'text-amber-400' : 'text-green-400' }}">{{ number_format($order->solde_restant_a_payer, 0, ',', ' ') }} FCFA</td>
                                         
                                         <td class="px-6 py-4">
                                             <span class="px-3 py-1 text-xs font-semibold rounded-full
@@ -70,16 +129,10 @@
                                         </td>
                                         
                                         <td class="px-6 py-4 text-right whitespace-nowrap text-sm font-medium">
-                                            @if($order->statut === \App\Enums\OrderStatusEnum::EN_ATTENTE)
-                                                <a href="{{ route('client.orders.edit', $order) }}" wire:navigate class="text-amber-400 hover:text-amber-300 mr-4">Modifier</a>
-                                            @endif
                                             @if($order->statut === \App\Enums\OrderStatusEnum::EN_COURS_LIVRAISON)
                                                 <button wire:click="confirmReception({{ $order->id }})" wire:confirm="Confirmez-vous avoir bien reçu cette commande ?" class="text-green-400 hover:text-green-300 mr-4">Confirmer Réception</button>
                                             @endif
-                                            @if($order->statut === \App\Enums\OrderStatusEnum::LIVREE)
-                                                <a href="{{ route('client.orders.invoice', $order) }}" target="_blank" class="text-blue-400 hover:text-blue-300 mr-4">Facture</a>
-                                            @endif
-                                            <a href="{{ route('client.orders.show', $order) }}" wire:navigate class="brand-red hover:text-red-400">Voir</a>
+                                            <a href="{{ route('client.orders.show', $order) }}" wire:navigate class="brand-red hover:text-red-400">Voir Détails</a>
                                         </td>
                                     </tr>
                                 @empty
@@ -108,7 +161,7 @@
                     <div class="space-y-3 text-sm">
                         <p class="text-slate-400"><strong>Identifiant :</strong> <span class="font-mono text-white">{{ $client->identifiant_unique_somacif }}</span></p>
                         <p class="text-slate-400"><strong>Téléphone :</strong> <span class="text-white">{{ $client->telephone }}</span></p>
-                        <p class="text-slate-400"><strong>Type :</strong> <span class="text-white">{{ $client->type }}</span></p>
+                        <p class="text-slate-400"><strong>Type :</strong> <span class="text-white">{{ ucfirst($client->type) }}</span></p>
                         <div class="pt-3 border-t border-border-dark">
                             <h4 class="font-bold text-white mb-2">Vos points de vente :</h4>
                             <ul class="list-disc list-inside text-slate-300">

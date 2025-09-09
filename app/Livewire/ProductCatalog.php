@@ -18,54 +18,60 @@ class ProductCatalog extends Component
     public array $quantities = [];
     public array $selectedVariants = [];
 
-    // S'exécute au chargement du composant
     public function mount()
     {
         $this->client = Auth::guard('client')->user();
-
-        // Initialise la variante sélectionnée pour chaque produit avec sa première unité de vente
         $products = Product::where('is_visible', true)->with('uniteDeVentes')->get();
         foreach ($products as $product) {
-            $this->quantities[$product->id] = 1;
-            $this->selectedVariants[$product->id] = $product->uniteDeVentes->first()?->id;
+            $firstVariant = $product->uniteDeVentes->first();
+            if ($firstVariant) {
+                $this->quantities[$firstVariant->id] = 1; // On lie la quantité à l'ID de l'unité
+                $this->selectedVariants[$product->id] = $firstVariant->id;
+            }
         }
     }
 
-    // Fonction pour ajouter au panier
-    public function addToCart($productId)
+    // --- CORRECTION DE LA LOGIQUE D'AJOUT AU PANIER ---
+    public function addToCart($uniteDeVenteId)
     {
         if (!$this->client) {
             return redirect()->route('login');
         }
 
-        $uniteDeVenteId = $this->selectedVariants[$productId] ?? null;
-        $quantity = $this->quantities[$productId] ?? 1;
         $unite = UniteDeVente::find($uniteDeVenteId);
+        $quantity = $this->quantities[$uniteDeVenteId] ?? 1;
 
-        if ($unite && $quantity > 0) {
-            Cart::instance('default')->add(
-                $unite->id,
-                $unite->product->nom . ' (' . $unite->nom_unite . ')',
-                $quantity,
-                $this->getPriceForClient($unite),
-                ['image' => $unite->product->image_principale]
-            );
-
-            $this->dispatch('cart_updated');
-            session()->flash('success', '"' . $unite->product->nom . '" a été ajouté au panier.');
-        } else {
-            session()->flash('error', 'Impossible d\'ajouter ce produit au panier.');
+        if (!$unite || $quantity <= 0) {
+            session()->flash('error', 'Produit invalide ou quantité incorrecte.');
+            return;
         }
+
+        // --- VALIDATION DU STOCK ---
+        if ($unite->stock_entrepôt_principal < $quantity) {
+            session()->flash('error', "Stock insuffisant pour \"{$unite->nom_complet}\". Il ne reste que {$unite->stock_entrepôt_principal} carton(s).");
+            return;
+        }
+
+        Cart::instance('default')->add(
+            $unite->id,
+            $unite->nom_complet, // Utilisation du nom complet pour plus de clarté
+            $quantity,
+            $this->getPriceForClient($unite),
+            ['image' => $unite->product->image_principale]
+        );
+
+        $this->dispatch('cart_updated');
+        session()->flash('success', '"' . $unite->nom_complet . '" a été ajouté au panier.');
     }
     
-    // Logique pour déterminer le prix en fonction du type de client
     public function getPriceForClient(UniteDeVente $unite)
     {
+        // Cette logique est déjà correcte
         return match ($this->client?->type) {
             'Grossiste' => $unite->prix_grossiste,
             'Hôtel/Restaurant' => $unite->prix_hotel_restaurant,
             'Particulier' => $unite->prix_particulier,
-            default => $unite->prix_unitaire, // Prix par défaut
+            default => $unite->prix_unitaire,
         };
     }
 

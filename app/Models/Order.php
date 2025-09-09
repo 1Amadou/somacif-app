@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class Order extends Model
 {
@@ -56,22 +57,29 @@ class Order extends Model
 
     // --- LOGIQUE MÉTIER ---
     public function updatePaymentStatus(): void
-    {
-        // On force le rechargement du total versé pour avoir la donnée la plus fraîche
-        $totalVerse = $this->reglements()->sum('montant_verse');
-        $this->montant_paye = $totalVerse;
+{
+    Log::info("--- DÉBUT Order::updatePaymentStatus pour la commande ID: {$this->id} ---");
+    
+    $totalVerse = $this->reglements()->sum('montant_verse');
+    $this->montant_paye = $totalVerse;
 
-        // Logique de statut infaillible
-        if ($this->montant_total > 0 && $totalVerse >= $this->montant_total) {
-            $this->statut_paiement = PaymentStatusEnum::COMPLETEMENT_REGLE;
-        } elseif ($totalVerse > 0) {
-            $this->statut_paiement = PaymentStatusEnum::PARTIELLEMENT_REGLE;
-        } else {
-            $this->statut_paiement = PaymentStatusEnum::NON_PAYEE;
-        }
-        
-        $this->saveQuietly();
+    Log::info("Calculs pour commande {$this->id}: Montant Total Proforma = {$this->montant_total}, Total Versé = {$totalVerse}");
+
+    $originalStatus = $this->statut_paiement->value;
+
+    if ($this->montant_total > 0 && $totalVerse >= $this->montant_total) {
+        $this->statut_paiement = PaymentStatusEnum::COMPLETEMENT_REGLE;
+    } elseif ($totalVerse > 0) {
+        $this->statut_paiement = PaymentStatusEnum::PARTIELLEMENT_REGLE;
+    } else {
+        $this->statut_paiement = PaymentStatusEnum::NON_PAYEE;
     }
+    
+    Log::info("Statut calculé: {$this->statut_paiement->value}. (Ancien statut: {$originalStatus})");
+
+    $this->saveQuietly();
+    Log::info("--- FIN Order::updatePaymentStatus --- Commande sauvegardée.");
+}
     
     public function recalculateTotal(): void
     {

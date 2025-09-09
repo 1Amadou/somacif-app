@@ -2,10 +2,14 @@
     {{-- Le bloc d'achat ne s'affiche que pour les clients connectés --}}
     @if($client)
         @if ($selectedVariant)
-            <div class="mb-6">
+            <div class="mb-4">
                 <p class="text-4xl font-teko brand-red">
                     {{ number_format($currentPrice, 0, ',', ' ') }} FCFA
                     <span class="text-lg text-slate-400">/ {{ $selectedVariant->nom_unite }}</span>
+                </p>
+                 {{-- AMÉLIORATION : Affichage du stock --}}
+                <p class="text-sm text-slate-400 mt-2">
+                    Stock disponible : <span class="font-bold text-white">{{ $selectedVariant->stock_entrepôt_principal }}</span>
                 </p>
             </div>
 
@@ -22,10 +26,20 @@
 
                 {{-- Champ quantité et bouton d'ajout --}}
                 <div class="flex items-center gap-4">
-                    <input type="number" min="1" wire:model="quantity" class="w-24 form-input text-center bg-slate-800 border border-slate-700 rounded-md py-3 px-2 text-white">
-                    <button wire:click="addToCart" wire:loading.attr="disabled" class="w-full bg-brand-red hover:bg-red-700 text-white font-bold text-sm uppercase tracking-wider py-4 px-3 rounded-md transition-colors">
+                    {{-- CORRECTION : On ajoute un max basé sur le stock --}}
+                    <input type="number" min="1" max="{{ $selectedVariant->stock_entrepôt_principal }}" wire:model="quantity" class="w-24 form-input text-center bg-slate-800 border border-slate-700 rounded-md py-3 px-2 text-white">
+                    
+                    {{-- CORRECTION : On désactive le bouton si le stock est épuisé --}}
+                    <button wire:click="addToCart" wire:loading.attr="disabled" 
+                            class="w-full bg-brand-red hover:bg-red-700 text-white font-bold text-sm uppercase tracking-wider py-4 px-3 rounded-md transition-colors disabled:bg-slate-700 disabled:cursor-not-allowed"
+                            @if($selectedVariant->stock_entrepôt_principal <= 0) disabled @endif>
+                        
                         <span wire:loading.remove wire:target="addToCart">
-                            <i class="fas fa-shopping-cart mr-2"></i> Ajouter au panier
+                             @if($selectedVariant->stock_entrepôt_principal > 0)
+                                <i class="fas fa-shopping-cart mr-2"></i> Ajouter au panier
+                             @else
+                                En rupture de stock
+                             @endif
                         </span>
                         <span wire:loading wire:target="addToCart">Ajout en cours...</span>
                     </button>

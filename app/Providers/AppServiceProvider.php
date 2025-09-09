@@ -58,7 +58,7 @@ class AppServiceProvider extends ServiceProvider
         Order::observe(OrderObserver::class);
         OrderItem::observe(OrderItemObserver::class); // Souvent pas nécessaire si OrderObserver gère tout
         Reglement::observe(ReglementObserver::class);
-        VenteDirecte::observe(VenteDirecteObserver::class);
+        // VenteDirecte::observe(VenteDirecteObserver::class);
         StockTransfert::observe(StockTransfertObserver::class);
         
         // *** CORRECTION : Ajout de l'observateur manquant ***

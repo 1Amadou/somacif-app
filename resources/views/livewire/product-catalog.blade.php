@@ -5,6 +5,11 @@
             {{ session('success') }}
         </div>
     @endif
+    @if(session()->has('error'))
+        <div class="bg-red-800 border border-red-700 text-white p-4 rounded-lg text-center mb-8">
+            {{ session('error') }}
+        </div>
+    @endif
 
     {{-- Message pour les visiteurs non connectés --}}
     @if(!$client)
@@ -28,7 +33,7 @@
                     <div class="p-6 flex flex-col flex-grow">
                         <h3 class="text-2xl text-white mb-2 font-teko truncate">{{ $product->nom }}</h3>
 
-                        @if($product->uniteDeVentes->count() > 0)
+                        @if($product->uniteDeVentes->isNotEmpty())
                             {{-- Sélection de l'unité de vente (calibre/poids) --}}
                             <select wire:model.live="selectedVariants.{{ $product->id }}" class="form-input mb-4 text-sm bg-slate-800 border border-slate-700 text-white rounded-md">
                                 @foreach($product->uniteDeVentes as $unite)
@@ -37,25 +42,42 @@
                             </select>
                             
                             @php
+                                // On récupère la variante sélectionnée, ou la première par défaut
                                 $selectedUnite = $product->uniteDeVentes->firstWhere('id', $selectedVariants[$product->id] ?? null) ?? $product->uniteDeVentes->first();
                             @endphp
 
-                            {{-- Prix dynamique --}}
-                            <p class="text-3xl font-teko brand-red mb-4">
-                                {{ number_format($this->getPriceForClient($selectedUnite), 0, ',', ' ') }} FCFA
-                            </p>
-                            
-                            <div class="mt-auto pt-4 border-t border-slate-800">
-                                <div class="flex items-center gap-2">
-                                    <input type="number" min="1" wire:model="quantities.{{ $selectedUnite->id }}" class="w-20 form-input text-center bg-slate-800 border border-slate-700 rounded-md py-2 px-2 text-white">
-                                    <button wire:click="addToCart({{ $selectedUnite->id }})" wire:loading.attr="disabled" class="w-full bg-brand-red hover:bg-red-700 text-white font-bold text-sm uppercase tracking-wider py-3 px-3 rounded-md transition-colors">
-                                        <span wire:loading.remove wire:target="addToCart({{ $selectedUnite->id }})">Ajouter</span>
-                                        <span wire:loading wire:target="addToCart({{ $selectedUnite->id }})">Ajout...</span>
-                                    </button>
+                            {{-- On s'assure qu'une unité de vente existe avant d'afficher les détails --}}
+                            @if ($selectedUnite)
+                                {{-- Prix dynamique --}}
+                                <p class="text-3xl font-teko brand-red mb-2">
+                                    {{ number_format($this->getPriceForClient($selectedUnite), 0, ',', ' ') }} FCFA
+                                </p>
+
+                                {{-- Affichage du stock --}}
+                                <p class="text-sm text-slate-400 mb-4">
+                                    Stock disponible : <span class="font-bold text-white">{{ $selectedUnite->stock_entrepôt_principal }}</span>
+                                </p>
+                                
+                                <div class="mt-auto pt-4 border-t border-slate-800">
+                                    <div class="flex items-center gap-2">
+                                        {{-- Champ de quantité avec une valeur max --}}
+                                        <input type="number" min="1" max="{{ $selectedUnite->stock_entrepôt_principal }}" wire:model="quantities.{{ $selectedUnite->id }}" class="w-20 form-input text-center bg-slate-800 border border-slate-700 rounded-md py-2 px-2 text-white">
+                                        
+                                        {{-- Bouton d'ajout qui se désactive si le stock est à 0 --}}
+                                        <button wire:click="addToCart({{ $selectedUnite->id }})" wire:loading.attr="disabled" 
+                                                class="w-full bg-brand-red hover:bg-red-700 text-white font-bold text-sm uppercase tracking-wider py-3 px-3 rounded-md transition-colors disabled:bg-slate-700 disabled:cursor-not-allowed" 
+                                                @if($selectedUnite->stock_entrepôt_principal <= 0) disabled @endif>
+                                            
+                                            <span wire:loading.remove wire:target="addToCart({{ $selectedUnite->id }})">
+                                                @if($selectedUnite->stock_entrepôt_principal > 0) Ajouter @else En rupture @endif
+                                            </span>
+                                            <span wire:loading wire:target="addToCart({{ $selectedUnite->id }})">Ajout...</span>
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            @endif
                         @else
-                            <p class="text-slate-400">Aucune unité de vente disponible.</p>
+                            <p class="text-slate-400 mt-auto pt-4">Aucune unité de vente disponible.</p>
                         @endif
                     </div>
                 </div>

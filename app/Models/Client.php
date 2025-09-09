@@ -13,7 +13,7 @@ class Client extends Authenticatable
 
     protected $fillable = [
         'nom', 'email', 'password', 'telephone', 'type', 
-        'identifiant_unique_somacif', 'statut',
+        'identifiant_unique_somacif', 'status',
         'verification_code', 'verification_code_expires_at',
     ];
 
@@ -49,4 +49,8 @@ class Client extends Authenticatable
         $this->save();
         return $code; // Retourne le code en clair pour l'envoi
     }
+    public function loginLogs(): HasMany
+{
+    return $this->hasMany(LoginLog::class)->latest('login_at');
+}
 }

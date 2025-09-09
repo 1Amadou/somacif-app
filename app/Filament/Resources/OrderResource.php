@@ -110,6 +110,7 @@ class OrderResource extends Resource
     public static function infolist(Infolist $infolist): Infolist
 {
     return $infolist->schema([
+        
         Section::make('Situation Actuelle')
             ->schema([
                 Grid::make(3)->schema([

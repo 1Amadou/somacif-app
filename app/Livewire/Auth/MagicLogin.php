@@ -34,32 +34,41 @@ class MagicLogin extends Component
 
     // Étape 1 : L'utilisateur entre son identifiant/email et demande un code
     public function sendCode(): void
-    {
-        $this->validate(['identifier' => 'required']);
+{
+    $this->validate(['identifier' => 'required']);
 
-        $user = Client::where('email', $this->identifier)
-                      ->orWhere('identifiant_unique_somacif', $this->identifier)
-                      ->first();
-        
+    $user = Client::where('email', $this->identifier)
+                  ->orWhere('identifiant_unique_somacif', $this->identifier)
+                  ->first();
+    
+    if ($user) {
+        $this->userType = 'client';
+    } else {
+        $user = Livreur::where('email', $this->identifier)->first();
         if ($user) {
-            $this->userType = 'client';
-        } else {
-            $user = Livreur::where('email', $this->identifier)->first();
             $this->userType = 'livreur';
         }
-
-        if ($user) {
-            $sentCode = $user->generateVerificationCode();
-            $user->notify(new MagicLoginCodeNotification($sentCode));
-
-            $this->userIdToVerify = $user->id; // On stocke l'ID de l'utilisateur
-            $this->codeSent = true;
-            $this->cooldown = $this->cooldownDuration; // On active le cooldown
-            Notification::make()->title('Code envoyé !')->body('Un code de vérification a été envoyé. Veuillez vérifier vos e-mails.')->success()->send();
-        } else {
-            $this->addError('identifier', 'Aucun compte trouvé pour cet identifiant.');
-        }
     }
+
+    if ($user) {
+        // --- CORRECTION DÉFINITIVE : On vérifie le statut de manière flexible ---
+        // Cette condition accepte maintenant 'actif' (pour les anciens comptes)
+        // et `true`/1 (pour les comptes modifiés via le ToggleColumn).
+        if ($user->status !== 'actif' && $user->status != true) {
+            $this->addError('identifier', 'Ce compte est actuellement désactivé. Veuillez contacter le support.');
+            return;
+        }
+
+        $sentCode = $user->generateVerificationCode();
+        $user->notify(new MagicLoginCodeNotification($sentCode));
+
+        $this->userIdToVerify = $user->id;
+        $this->codeSent = true;
+        $this->cooldown = $this->cooldownDuration;
+    } else {
+        $this->addError('identifier', 'Aucun compte trouvé pour cet identifiant.');
+    }
+}
 
     // Étape 2 : L'utilisateur entre le code reçu pour se connecter
     public function login(): void
@@ -73,6 +82,13 @@ class MagicLogin extends Component
             $guard = $this->userType;
             Auth::guard($guard)->login($user, true); // Le "true" active le "Se souvenir de moi"
             
+            if ($guard === 'client') {
+                $user->loginLogs()->create([
+                    'ip_address' => request()->ip(),
+                    'user_agent' => request()->userAgent(),
+                    'login_at' => now(),
+                ]);
+            }
             $user->forceFill([
                 'verification_code' => null,
                 'verification_code_expires_at' => null

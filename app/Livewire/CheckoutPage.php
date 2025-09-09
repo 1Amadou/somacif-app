@@ -3,6 +3,8 @@
 namespace App\Livewire;
 
 use App\Models\Order;
+use App\Models\Setting;
+use App\Models\UniteDeVente;
 use App\Models\User;
 use App\Notifications\NewOrderAdminNotification;
 use Gloudemans\Shoppingcart\Facades\Cart;
@@ -27,12 +29,24 @@ class CheckoutPage extends Component
             return redirect()->route('products.index');
         }
 
+        // Validation finale du stock (déjà en place et correcte)
+        foreach ($cartItems as $item) {
+            $unite = UniteDeVente::find($item->id);
+            if (!$unite || $unite->stock_entrepôt_principal < $item->qty) {
+                session()->flash('checkout_error', "Le stock pour \"{$item->name}\" est devenu insuffisant. Veuillez ajuster votre panier.");
+                return redirect()->route('client.checkout');
+            }
+        }
+
+        // --- CORRECTION : Utilisation de subtotal pour le montant total de la commande ---
+        $montantTotal = Cart::instance('default')->subtotal(2, '.', '');
+
         $order = Order::create([
             'client_id' => $client->id,
             'point_de_vente_id' => $this->point_de_vente_id,
             'numero_commande' => 'CMD-' . strtoupper(uniqid()),
             'statut' => 'en_attente',
-            'montant_total' => Cart::instance('default')->total(2, '.', ''),
+            'montant_total' => $montantTotal, // On utilise le montant fiable
             'notes' => $this->notes,
             'statut_paiement' => 'non_payee',
         ]);
@@ -47,7 +61,7 @@ class CheckoutPage extends Component
 
         Cart::instance('default')->destroy();
 
-        $adminEmail = \App\Models\Setting::where('key', 'admin_notification_email')->value('value');
+        $adminEmail = Setting::where('key', 'admin_notification_email')->value('value');
         if ($adminEmail) {
             (new User(['email' => $adminEmail]))->notify(new NewOrderAdminNotification($order));
         }
@@ -61,7 +75,8 @@ class CheckoutPage extends Component
         $client = Auth::guard('client')->user();
         $pointsDeVente = $client->pointsDeVente()->pluck('nom', 'id');
         $cartItems = Cart::instance('default')->content();
-        $cartTotal = Cart::instance('default')->total(0, ',', ' ');
+        // --- CORRECTION : Utilisation de subtotal pour l'affichage ---
+        $cartTotal = Cart::instance('default')->subtotal(0, ',', ' ');
 
         return view('livewire.checkout-page', compact('pointsDeVente', 'cartItems', 'cartTotal'))
             ->layout('components.layouts.app');

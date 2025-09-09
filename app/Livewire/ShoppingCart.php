@@ -12,7 +12,7 @@ class ShoppingCart extends Component
     protected $listeners = ['cart_updated' => '$refresh'];
 
     public ?Client $client;
-    public bool $isCartOpen = false; // <-- CORRECTION : La variable manquante est ici
+    public bool $isCartOpen = false;
 
     public function mount()
     {
@@ -29,7 +29,8 @@ class ShoppingCart extends Component
     {
         $cartItems = Cart::instance('default')->content()->toArray();
         $cartCount = Cart::instance('default')->count();
-        $cartTotal = Cart::instance('default')->total(0, ',', ' ');
+        // --- CORRECTION : Utilisation de subtotal pour un montant fiable ---
+        $cartTotal = Cart::instance('default')->subtotal(0, ',', ' ');
 
         return view('livewire.shopping-cart', [
             'cartItems' => $cartItems,

@@ -17,49 +17,49 @@ class ClientResource extends Resource
 {
     protected static ?string $model = Client::class;
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
-    protected static ?string $navigationGroup = 'Partenaires';
-    protected static ?int $navigationSort = 1;
+    protected static ?string $navigationGroup = 'Clients & Partenaires'; // Changement de groupe pour la cohérence
+    protected static ?int $navigationSort = 2; // Ajustement du tri
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Informations Générales')
+                Forms\Components\Section::make('Informations sur le Partenaire')
                     ->schema([
                         Forms\Components\TextInput::make('nom')
-                            ->required()
-                            ->maxLength(255),
+                            ->required()->maxLength(255),
                         Forms\Components\Select::make('type')
                             ->options([
                                 'Grossiste' => 'Grossiste',
                                 'Hôtel/Restaurant' => 'Hôtel/Restaurant',
                                 'Particulier' => 'Particulier',
-                            ])
-                            ->required(),
+                            ])->required(),
                         Forms\Components\TextInput::make('telephone')
-                            ->tel()
-                            ->required()
-                            ->unique(ignoreRecord: true), // Ajout de la validation unique
+                            ->tel()->required()->unique(ignoreRecord: true),
                         Forms\Components\TextInput::make('email')
-                            ->email()
-                            ->maxLength(255)
-                            ->unique(ignoreRecord: true) // Ajout de la validation unique
-                            ->nullable(), // Permet de ne pas avoir d'email
+                            ->email()->maxLength(255)->unique(ignoreRecord: true)->nullable(),
+                        // --- AMÉLIORATION : Ajout du champ Statut ---
+                        Forms\Components\Toggle::make('status')
+                            ->label('Compte Actif')
+                            ->helperText('Si désactivé, le client ne pourra pas se connecter.')
+                            ->onColor('success')
+                            ->offColor('danger')
+                            ->default(true), // Les nouveaux clients sont actifs par défaut
                     ])->columns(2),
 
                 Forms\Components\Section::make('Informations de Connexion (Portail Client)')
                     ->schema([
                         Forms\Components\TextInput::make('identifiant_unique_somacif')
                             ->label('Identifiant Unique')
-                            ->disabled()
-                            ->dehydrated(fn ($state) => filled($state))
+                            ->disabled()->dehydrated(fn ($state) => filled($state))
                             ->default(fn () => 'SOM-' . Str::upper(Str::random(8))),
                         Forms\Components\TextInput::make('password')
-                            ->label('Mot de passe') // Renommé le label pour plus de clarté
+                            ->label('Nouveau mot de passe')
                             ->password()
-                            ->dehydrateStateUsing(fn ($state) => filled($state) ? Hash::make($state) : null) // Gère les cas où le champ est vide
+                            ->dehydrateStateUsing(fn ($state) => filled($state) ? Hash::make($state) : null)
                             ->dehydrated(fn ($state) => filled($state))
-                            ->required(fn (string $context): bool => $context === 'create'),
+                            ->required(fn (string $context): bool => $context === 'create')
+                            ->helperText("Laissez vide si vous ne voulez pas changer le mot de passe."),
                     ])->columns(2),
             ]);
     }
@@ -68,24 +68,33 @@ class ClientResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('nom')
-                    ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('identifiant_unique_somacif')
-                    ->label('ID Unique')
-                    ->searchable(),
-                Tables\Columns\TextColumn::make('pointsDeVente_count')
-                    ->counts('pointsDeVente')
-                    ->label('Points de Vente')
-                    ->badge(),
-                Tables\Columns\TextColumn::make('type')
-                    ->badge(),
+                Tables\Columns\TextColumn::make('nom')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('identifiant_unique_somacif')->label('ID Unique')->searchable(),
+                Tables\Columns\TextColumn::make('type')->badge(),
+                // --- AMÉLIORATION : Colonne de statut visuelle et interactive ---
+                Tables\Columns\ToggleColumn::make('status')
+                    ->label('Actif')
+                    ->onColor('success')
+                    ->offColor('danger'),
                 Tables\Columns\TextColumn::make('telephone'),
-                Tables\Columns\TextColumn::make('email'), // Ajout de la colonne email
+                Tables\Columns\TextColumn::make('email')->searchable(),
+            ])
+            ->filters([
+                // --- AMÉLIORATION : Filtre par statut ---
+                Tables\Filters\TernaryFilter::make('status')
+                    ->label('Statut du compte')
+                    ->boolean()
+                    ->trueLabel('Actifs')
+                    ->falseLabel('Inactifs'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\ViewAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
             ]);
     }
 
@@ -95,6 +104,7 @@ class ClientResource extends Resource
             RelationManagers\PointsDeVenteRelationManager::class,
             RelationManagers\OrdersRelationManager::class,
             RelationManagers\ReglementsRelationManager::class,
+            RelationManagers\LoginLogsRelationManager::class,
         ];
     }
 

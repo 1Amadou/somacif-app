@@ -3,13 +3,8 @@
 namespace App\Filament\Resources\ReglementResource\Pages;
 
 use App\Filament\Resources\ReglementResource;
-use App\Models\Inventory;
-use App\Models\LieuDeStockage;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Exception;
 
 class CreateReglement extends CreateRecord
 {
@@ -21,54 +16,14 @@ class CreateReglement extends CreateRecord
         return $data;
     }
 
-    protected function afterCreate(): void
-    {
-        $reglement = $this->getRecord();
-        // On recharge TOUT ce dont on a besoin pour être sûr d'avoir les données fraîches.
-        $reglement->load('order.pointDeVente.lieuDeStockage', 'details.uniteDeVente');
-
-        Log::info('--- DÉBUT DU TRAITEMENT POST-RÈGLEMENT ---');
-
-        try {
-            DB::transaction(function () use ($reglement) {
-                $lieuDeStockage = $reglement->order?->pointDeVente?->lieuDeStockage;
-                if (!$lieuDeStockage) {
-                    throw new Exception("Lieu de stockage introuvable.");
-                }
-
-                // 1. Déstockage final
-                Log::info('[afterCreate] Début du déstockage pour ' . $reglement->details->count() . ' article(s).');
-                foreach ($reglement->details as $detail) {
-                    $inventory = Inventory::where('lieu_de_stockage_id', $lieuDeStockage->id)
-                                        ->where('unite_de_vente_id', $detail->unite_de_vente_id)
-                                        ->firstOrFail();
-                    
-                    $inventory->decrement('quantite_stock', $detail->quantite_vendue);
-                }
-                Log::info('[afterCreate] Déstockage terminé.');
-
-                // 2. Mise à jour du statut de paiement
-                Log::info('[afterCreate] Mise à jour du statut de paiement...');
-                $order = $reglement->order;
-                if ($order) {
-                    // *** LA CORRECTION CRUCIALE EST ICI ***
-                    // On force le rechargement de la relation pour qu'elle inclue ce nouveau règlement
-                    $order->load('reglements'); 
-                    $order->updatePaymentStatus();
-                }
-                Log::info('[afterCreate] Statut de paiement mis à jour.');
-            });
-
-        } catch (Exception $e) {
-            Log::error("[afterCreate] ÉCHEC du traitement post-règlement : " . $e->getMessage());
-            throw $e;
-        }
-        
-        Log::info('--- TRAITEMENT POST-RÈGLEMENT TERMINÉ ---');
-    }
-
+    // --- CORRECTION DÉFINITIVE ---
+    // La méthode afterCreate() est entièrement supprimée.
+    // L'observateur est maintenant la seule source de vérité pour la logique
+    // post-création, ce qui élimine les conflits et les doubles exécutions.
+    
     protected function getRedirectUrl(): string
     {
-        return $this->getResource()::getUrl('index');
+        // On peut rediriger vers la vue du règlement nouvellement créé
+        return $this->getResource()::getUrl('view', ['record' => $this->getRecord()]);
     }
 }

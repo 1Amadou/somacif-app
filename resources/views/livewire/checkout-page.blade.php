@@ -1,7 +1,11 @@
 <div class="py-24">
     <div class="container mx-auto px-6">
         <h1 class="text-5xl font-teko uppercase text-white mb-8">Finaliser ma commande</h1>
-
+        @if (session()->has('checkout_error'))
+            <div class="bg-red-900/50 border border-red-700 text-red-300 p-4 rounded-lg text-center mb-8">
+                {{ session('checkout_error') }}
+            </div>
+        @endif
         @if ($cartItems->count() > 0)
             <form wire:submit="placeOrder" class="grid lg:grid-cols-3 gap-8">
                 <div class="lg:col-span-2 bg-dark-card border border-border-dark rounded-lg p-6 space-y-6">
