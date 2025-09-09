@@ -3,23 +3,26 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ReglementResource\Pages;
-use App\Models\Inventory;
+use App\Models\Client;
 use App\Models\Order;
 use App\Models\Reglement;
-use App\Models\UniteDeVente;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
 use Filament\Infolists;
+use Filament\Infolists\Components\RepeatableEntry;
+use Filament\Infolists\Components\Section;
 use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
-use Filament\Infolists\Components\Section;
-use Filament\Infolists\Components\RepeatableEntry;
+use App\Filament\Resources\OrderResource;
+use Filament\Tables\Filters\TernaryFilter;
 
 class ReglementResource extends Resource
 {
@@ -27,6 +30,7 @@ class ReglementResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
     protected static ?string $navigationGroup = 'Ventes & Commandes';
     protected static ?string $label = 'Règlement Client';
+    protected static ?string $pluralLabel = 'Règlements Clients';
 
     public static function form(Form $form): Form
     {
@@ -40,7 +44,7 @@ class ReglementResource extends Resource
                             ->afterStateUpdated(fn (Set $set) => $set('order_id', null)),
 
                         Forms\Components\Select::make('order_id')
-                            ->label('Commande Concernée par le Règlement')
+                            ->label('Commande Concernée')
                             ->options(function (Get $get, ?Reglement $record): Collection {
                                 $clientId = $get('client_id') ?? $record?->client_id;
                                 if (!$clientId) return collect();
@@ -73,12 +77,12 @@ class ReglementResource extends Resource
                             ]),
 
                         Forms\Components\Select::make('methode_paiement')
-                            ->options(['especes' => 'Espèces', 'cheque' => 'Chèque', 'virement' => 'Virement', 'autre' => 'Autre'])
+                            ->options(['especes' => 'Espèces', 'cheque' => 'Chèque', 'virement' => 'Virement', 'mobile_money' => 'Mobile Money'])
                             ->required(),
                     ])->columns(2),
 
                 Forms\Components\Section::make('Détail des Ventes (pour le déstockage)')
-                    ->description("Ajoutez une ligne pour chaque lot de produit vendu, même si c'est le même produit à un prix différent.")
+                    ->description("Déclarez ici chaque carton vendu et le prix de vente réel.")
                     ->schema([
                         Forms\Components\Repeater::make('details')
                             ->relationship()
@@ -89,7 +93,7 @@ class ReglementResource extends Resource
                                         $orderId = $get('../../order_id');
                                         if (!$orderId) return [];
                                         
-                                        $order = Order::with('items.uniteDeVente.product')->find($orderId);
+                                        $order = Order::find($orderId);
                                         return $order?->items
                                             ->pluck('uniteDeVente.nom_complet', 'unite_de_vente_id')
                                             ->toArray() ?? [];
@@ -105,28 +109,12 @@ class ReglementResource extends Resource
                                         if (!$orderId || !$uniteDeVenteId) return '';
 
                                         $order = Order::find($orderId);
-                                        $orderItem = $order->items()->where('unite_de_vente_id', $uniteDeVenteId)->first();
-                                        $quantiteCommandee = $orderItem?->quantite ?? 0;
-                                        
-                                        // *** AMÉLIORATION : Affichage du stock du point de vente ***
                                         $stockActuel = $order->pointDeVente?->lieuDeStockage?->inventories()
                                             ->where('unite_de_vente_id', $uniteDeVenteId)->value('quantite_stock') ?? 0;
 
-                                        return "/ {$quantiteCommandee} (Stock: {$stockActuel})";
+                                        return "(Stock PDV: {$stockActuel})";
                                     })
                                     ->rules([
-                                        // Règle 1 : Ne pas vendre plus que commandé
-                                        fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
-                                            $orderId = $get('../../order_id');
-                                            $uniteDeVenteId = $get('unite_de_vente_id');
-                                            if (!$orderId || !$uniteDeVenteId || is_null($value)) return;
-                                            
-                                            $orderItem = Order::find($orderId)->items()->where('unite_de_vente_id', $uniteDeVenteId)->first();
-                                            if ($orderItem && $value > $orderItem->quantite) {
-                                                $fail("La quantité vendue ({$value}) dépasse la quantité commandée ({$orderItem->quantite}).");
-                                            }
-                                        },
-                                        // Règle 2 : Ne pas vendre plus que le stock disponible
                                         fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
                                             $orderId = $get('../../order_id');
                                             $uniteDeVenteId = $get('unite_de_vente_id');
@@ -142,7 +130,7 @@ class ReglementResource extends Resource
                                     ]),
                                 
                                 Forms\Components\TextInput::make('prix_de_vente_unitaire')
-                                    ->numeric()->required()->label('Prix de Vente Unitaire')->live(onBlur: true),
+                                    ->numeric()->required()->label('Prix de Vente Unitaire Réel')->live(onBlur: true),
                             ])
                             ->columns(3)
                             ->addActionLabel('Ajouter une ligne de vente')
@@ -157,52 +145,96 @@ class ReglementResource extends Resource
             ]);
     }
 
-    // Le reste du fichier (infolist, table, etc.) reste identique car il ne manipule pas la logique de stock.
-    
-    public static function infolist(Infolist $infolist): Infolist
-{
-    return $infolist
-        ->schema([
-            Section::make('Informations Générales')
-                ->schema([
-                    Infolists\Components\TextEntry::make('client.nom'),
-                    Infolists\Components\TextEntry::make('order.numero_commande')->label('Commande Concernée'),
-                    Infolists\Components\TextEntry::make('date_reglement')->date('d/m/Y'),
-                    Infolists\Components\TextEntry::make('montant_verse')->money('XOF')->color('success'),
-                    Infolists\Components\TextEntry::make('methode_paiement')->badge(),
-                    Infolists\Components\TextEntry::make('user.name')->label('Enregistré par'),
-                ])->columns(3),
-            
-            Section::make('Détail des Ventes Enregistrées pour ce Règlement')
-                ->schema([
-                    RepeatableEntry::make('details')
-                        ->schema([
-                            Infolists\Components\TextEntry::make('uniteDeVente.nom_complet')->label('Article')->columnSpan(2),
-                            Infolists\Components\TextEntry::make('quantite_vendue')->label('Qté Vendue'),
-                            Infolists\Components\TextEntry::make('prix_de_vente_unitaire')->label('Prix de Vente')->money('XOF'),
-                        ])->columns(4)->label(''),
-                ]),
-        ]);
-}
-
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('client.nom')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('date_reglement')->date('d/m/Y')->sortable(),
+                Tables\Columns\TextColumn::make('date_reglement')->date('d/m/Y')->label('Date')->sortable(),
                 Tables\Columns\TextColumn::make('montant_verse')->money('XOF')->sortable(),
-                Tables\Columns\TextColumn::make('montant_calcule')->money('XOF')->sortable(),
-                Tables\Columns\TextColumn::make('order.numero_commande')->badge(),
-                Tables\Columns\TextColumn::make('user.name')->sortable(),
+                Tables\Columns\TextColumn::make('order.numero_commande')
+                    ->label('Commande')
+                    ->badge()
+                    ->searchable()
+                    ->url(fn (Reglement $record): string => OrderResource::getUrl('view', ['record' => $record->order_id]))
+                    ->openUrlInNewTab(),
+                Tables\Columns\TextColumn::make('methode_paiement')->badge(),
+                Tables\Columns\TextColumn::make('user.name')->label('Enregistré par')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('date_reglement', 'desc')
+            ->filters([
+                SelectFilter::make('client_id')
+                    ->label('Client')
+                    ->options(Client::pluck('nom', 'id')->all())
+                    ->searchable(),
+                Filter::make('date_reglement')
+                    ->form([
+                        Forms\Components\DatePicker::make('created_from')->label('Du'),
+                        Forms\Components\DatePicker::make('created_until')->label('Au'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['created_from'],
+                                fn (Builder $query, $date): Builder => $query->whereDate('date_reglement', '>=', $date),
+                            )
+                            ->when(
+                                $data['created_until'],
+                                fn (Builder $query, $date): Builder => $query->whereDate('date_reglement', '<=', $date),
+                            );
+                    }),
+                SelectFilter::make('methode_paiement')
+                    ->options([
+                        'especes' => 'Espèces',
+                        'cheque' => 'Chèque',
+                        'virement' => 'Virement',
+                        'mobile_money' => 'Mobile Money',
+                    ]),
+                    TernaryFilter::make('is_vente_directe')
+                    ->label('Type de Vente d\'Origine')
+                    ->placeholder('Toutes')
+                    ->trueLabel('Vente Directe')
+                    ->falseLabel('Bon de Commande')
+                    ->queries(
+                        true: fn (Builder $query) => $query->whereHas('order', fn ($q) => $q->where('is_vente_directe', true)),
+                        false: fn (Builder $query) => $query->whereHas('order', fn ($q) => $q->where('is_vente_directe', false)),
+                    ),
+            ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
             ]);
     }
 
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Section::make('Informations Générales')
+                    ->schema([
+                        Infolists\Components\TextEntry::make('client.nom'),
+                        Infolists\Components\TextEntry::make('order.numero_commande')
+                            ->label('Commande Concernée')
+                            ->url(fn (Reglement $record): string => OrderResource::getUrl('view', ['record' => $record->order_id]))
+                            ->openUrlInNewTab(),
+                        Infolists\Components\TextEntry::make('date_reglement')->date('d/m/Y'),
+                        Infolists\Components\TextEntry::make('montant_verse')->money('XOF')->color('success'),
+                        Infolists\Components\TextEntry::make('methode_paiement')->badge(),
+                        Infolists\Components\TextEntry::make('user.name')->label('Enregistré par'),
+                    ])->columns(3),
+                
+                Section::make('Détail des Ventes Enregistrées pour ce Règlement')
+                    ->schema([
+                        RepeatableEntry::make('details')
+                            ->schema([
+                                Infolists\Components\TextEntry::make('uniteDeVente.nom_complet')->label('Article')->columnSpan(2),
+                                Infolists\Components\TextEntry::make('quantite_vendue')->label('Qté Vendue'),
+                                Infolists\Components\TextEntry::make('prix_de_vente_unitaire')->label('Prix de Vente')->money('XOF'),
+                            ])->columns(4)->label(''),
+                    ]),
+            ]);
+    }
+    
     public static function updateMontantCalcule(Get $get, Set $set): void
     {
         $details = $get('details');
@@ -214,7 +246,7 @@ class ReglementResource extends Resource
         }
         $set('montant_calcule', $total);
     }
-
+    
     public static function getPages(): array
     {
         return [

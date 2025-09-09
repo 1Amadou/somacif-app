@@ -22,6 +22,7 @@ class Reglement extends Model
         'point_de_vente_id', // Nécessaire pour l'observer
         'order_id',          // NOUVEAU : La commande principale du règlement
         'montant_calcule',
+        'recu_versement_print_count'
     ];
 
     public function client(): BelongsTo
@@ -54,5 +55,19 @@ class Reglement extends Model
     public function pointDeVente(): BelongsTo
     {
         return $this->belongsTo(PointDeVente::class);
+    }
+
+    public function getNumeroVersementAttribute(): string
+    {
+        if (!$this->order) {
+            return 'N/A';
+        }
+        // Récupère tous les règlements de la commande, triés
+        $reglements = $this->order->reglements()->orderBy('created_at', 'asc')->get();
+        // Trouve la position (index) de ce règlement dans la collection
+        $index = $reglements->search(fn($reglement) => $reglement->id === $this->id);
+        
+        $position = $index !== false ? $index + 1 : '?';
+        return "{$position} / {$reglements->count()}";
     }
 }

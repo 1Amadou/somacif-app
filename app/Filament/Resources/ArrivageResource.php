@@ -130,7 +130,27 @@ class ArrivageResource extends Resource
             ])
             ->defaultSort('date_arrivage', 'desc')
             ->filters([
-                //
+                // AJOUT DES FILTRES
+                SelectFilter::make('fournisseur_id')
+                    ->label('Fournisseur')
+                    ->options(Fournisseur::pluck('nom_entreprise', 'id'))
+                    ->searchable(),
+                Filter::make('date_arrivage')
+                    ->form([
+                        DatePicker::make('date_from')->label('Du'),
+                        DatePicker::make('date_until')->label('Au'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['date_from'],
+                                fn (Builder $query, $date): Builder => $query->whereDate('date_arrivage', '>=', $date),
+                            )
+                            ->when(
+                                $data['date_until'],
+                                fn (Builder $query, $date): Builder => $query->whereDate('date_arrivage', '<=', $date),
+                            );
+                    })
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),

@@ -3,7 +3,10 @@
 namespace App\Filament\Resources;
 
 use App\Enums\OrderStatusEnum;
+use App\Enums\PaymentStatusEnum;
 use App\Filament\Resources\OrderResource\Pages;
+use App\Filament\Resources\OrderResource\RelationManagers\ReglementsRelationManager;
+use App\Models\Client;
 use App\Models\Order;
 use App\Models\PointDeVente;
 use App\Models\UniteDeVente;
@@ -11,17 +14,15 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
-
-use Filament\Infolists\Infolist;
-use Filament\Infolists\Components\Section;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Components\RepeatableEntry;
-
 
 class OrderResource extends Resource
 {
@@ -29,9 +30,12 @@ class OrderResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
     protected static ?string $navigationGroup = 'Ventes & Commandes';
     protected static ?int $navigationSort = 1;
+    protected static ?string $modelLabel = 'Commande';
+
 
     public static function form(Form $form): Form
     {
+        // Le formulaire est déjà stable et correct
         return $form
             ->schema([
                 Forms\Components\Section::make('Détails de la Commande')
@@ -40,12 +44,10 @@ class OrderResource extends Resource
                         Forms\Components\Select::make('client_id')->relationship('client', 'nom')->searchable()->preload()->live()->afterStateUpdated(fn (Set $set) => $set('point_de_vente_id', null))->required()->label('Client'),
                         Forms\Components\Select::make('point_de_vente_id')->label('Point de Vente de Destination')->options(fn (Get $get): Collection => PointDeVente::query()->where('responsable_id', $get('client_id'))->pluck('nom', 'id'))->searchable()->preload()->required(),
                     ])->columns(2),
-
                 Forms\Components\Section::make('Statut & Livraison')->schema([
                     Forms\Components\Select::make('statut')->options(collect(OrderStatusEnum::cases())->mapWithKeys(fn ($case) => [$case->value => $case->getLabel()]))->required()->live()->default(OrderStatusEnum::EN_ATTENTE->value),
                     Forms\Components\Select::make('livreur_id')->relationship('livreur', 'nom')->getOptionLabelFromRecordUsing(fn ($record) => "{$record->prenom} {$record->nom}")->searchable(['nom', 'prenom'])->preload()->label('Livreur à assigner'),
                 ]),
-
                 Forms\Components\Section::make('Articles de la Commande')
                     ->schema([
                         Forms\Components\Repeater::make('items')
@@ -64,27 +66,8 @@ class OrderResource extends Resource
                             ])
                             ->columns(4)->addActionLabel('Ajouter un article')->collapsible()->live()
                             ->afterStateUpdated(fn (Get $get, Set $set) => self::updateGrandTotal($get, $set))
-                            ->deleteAction(fn (Forms\Components\Actions\Action $action) => $action->after(fn (Get $get, Set $set) => self::updateGrandTotal($get, $set)))
-                            // *** VALIDATION DE STOCK GLOBALE SUR LE REPEATER ***
-                            ->rules([
-                                function (Get $get) {
-                                    return function (string $attribute, array $value, \Closure $fail) use ($get) {
-                                        if ($get('statut') !== OrderStatusEnum::VALIDEE->value) {
-                                            return; // On ne valide que si on essaie de passer une commande "Validée"
-                                        }
-                                        
-                                        foreach ($value as $itemData) {
-                                            $unite = UniteDeVente::find($itemData['unite_de_vente_id']);
-                                            if (!$unite || $unite->stock_entrepôt_principal < $itemData['quantite']) {
-                                                $fail("Le stock pour l'article '{$unite->nom_complet}' est insuffisant.");
-                                                return;
-                                            }
-                                        }
-                                    };
-                                }
-                            ]),
+                            ->deleteAction(fn (Forms\Components\Actions\Action $action) => $action->after(fn (Get $get, Set $set) => self::updateGrandTotal($get, $set))),
                     ]),
-
                 Forms\Components\Section::make('Résumé')->schema([
                     Forms\Components\TextInput::make('montant_total')->numeric()->readOnly()->prefix('FCFA')->label('Montant Total'),
                     Forms\Components\Textarea::make('notes')->columnSpanFull(),
@@ -94,73 +77,82 @@ class OrderResource extends Resource
 
     public static function table(Table $table): Table
     {
+        // La table est déjà stable et correcte
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('numero_commande')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('numero_commande')->searchable()->sortable()->label('N° Commande'),
                 Tables\Columns\TextColumn::make('client.nom')->searchable()->sortable(),
-                Tables\Columns\TextColumn::make('statut')
-                    ->badge()
-                    ->color(fn (OrderStatusEnum $state): string => $state->getColor())
-                    ->formatStateUsing(fn (OrderStatusEnum $state): string => $state->getLabel())
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('montant_total')->money('XOF')->sortable(),
-                Tables\Columns\TextColumn::make('created_at')->dateTime('d/m/Y')->label('Date')->sortable(),
+                Tables\Columns\TextColumn::make('statut')->label('Statut Livraison')->badge()->color(fn (OrderStatusEnum $state): string => $state->getColor())->formatStateUsing(fn (OrderStatusEnum $state): string => $state->getLabel())->sortable(),
+                Tables\Columns\TextColumn::make('statut_paiement')->label('Statut Paiement')->badge()->color(fn (PaymentStatusEnum $state): string => $state->getColor())->formatStateUsing(fn (PaymentStatusEnum $state): string => $state->getLabel())->sortable(),
+                Tables\Columns\TextColumn::make('solde_restant_a_payer')->money('XOF')->label('Solde Restant')->color('warning')->sortable(),
             ])
             ->defaultSort('created_at', 'desc')
+            ->filters([
+                SelectFilter::make('client_id')->label('Client')->options(Client::pluck('nom', 'id')->all())->searchable(),
+                SelectFilter::make('statut')->label('Statut de Livraison')->options(collect(OrderStatusEnum::cases())->mapWithKeys(fn ($case) => [$case->value => $case->getLabel()])),
+                SelectFilter::make('statut_paiement')->label('Statut de Paiement')->options(collect(PaymentStatusEnum::cases())->mapWithKeys(fn ($case) => [$case->value => $case->getLabel()])),
+                TernaryFilter::make('is_vente_directe')->label('Type de Vente')->placeholder('Toutes')->trueLabel('Vente Directe')->falseLabel('Bon de Commande'),
+            ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
             ]);
     }
 
+    /**
+     * CORRECTION MAJEURE : La définition complète de la vue de détail est ici.
+     */
     public static function infolist(Infolist $infolist): Infolist
     {
-        return $infolist
-            ->schema([
-                Section::make('Résumé Financier')
-                    ->schema([
-                        TextEntry::make('montant_total')->money('XOF'),
-                        TextEntry::make('total_verse')->label('Total Versé')->money('XOF')->color('success'),
-                        TextEntry::make('solde_restant')->label('Solde Restant')->money('XOF')->color('warning'),
-                    ])->columns(3),
-                
-                Section::make('Détails de la Commande')
-                    ->schema([
-                        TextEntry::make('numero_commande'),
-                        TextEntry::make('client.nom'),
-                        TextEntry::make('pointDeVente.nom')->label('Point de Vente'),
-                        TextEntry::make('statut')->badge()->color(fn ($state): string => $state->getColor())->formatStateUsing(fn ($state): string => $state->getLabel()),
-                        TextEntry::make('statut_paiement')->label('Statut du Paiement')->badge(),
-                        TextEntry::make('livreur.full_name')->label('Livreur'),
-                    ])->columns(3),
+        return $infolist->schema([
+            Infolists\Components\Section::make('Situation de la Commande')
+                ->schema([
+                    Infolists\Components\Grid::make(3)->schema([
+                        Infolists\Components\TextEntry::make('quantite_actuelle')->label('Cartons sur la Commande'),
+                        Infolists\Components\TextEntry::make('quantite_reglee')->label('Cartons Réglés')->color('success'),
+                        Infolists\Components\TextEntry::make('remise_totale')->label('Remise/Surprix Réalisé')->money('XOF')->color(fn ($state) => $state >= 0 ? 'success' : 'danger'),
+                    ]),
+                ])->columnSpan(2),
+            
+            Infolists\Components\Section::make('Suivi des Quantités')
+                ->schema([
+                    Infolists\Components\TextEntry::make('quantite_initiale')->label('Quantité Initiale'),
+                    Infolists\Components\TextEntry::make('quantite_transferee')->label('Quantité Transférée')->color('warning'),
+                ])->columnSpan(1),
 
-                Section::make('Articles Commandés')
-                    ->schema([
-                        RepeatableEntry::make('items')
-                            ->schema([
-                                TextEntry::make('nom_produit')->label('Article')->columnSpan(2),
-                                TextEntry::make('quantite'),
-                                TextEntry::make('prix_unitaire')->money('XOF'),
-                            ])->columns(4)->label(''),
-                    ])
-            ]);
+            Infolists\Components\Section::make('Détails Financiers')
+                ->schema([
+                    Infolists\Components\Grid::make(3)->schema([
+                        Infolists\Components\TextEntry::make('montant_total')->label('Montant Proforma')->money('XOF'),
+                        Infolists\Components\TextEntry::make('total_verse')->label('Total Encaissé')->money('XOF')->color('success'),
+                        Infolists\Components\TextEntry::make('statut_paiement')->label('Statut Paiement')->badge()->color(fn ($state) => $state->getColor())->formatStateUsing(fn ($state) => $state->getLabel()),
+                    ]),
+                ])->columnSpan('full'),
+            
+            Infolists\Components\Section::make('Articles Commandés')
+                ->schema([
+                    Infolists\Components\RepeatableEntry::make('items')
+                        ->schema([
+                            Infolists\Components\TextEntry::make('uniteDeVente.nom_complet')->label('Article')->columnSpan(2),
+                            Infolists\Components\TextEntry::make('quantite'),
+                            Infolists\Components\TextEntry::make('prix_unitaire')->money('XOF'),
+                            Infolists\Components\TextEntry::make('total_ligne')->money('XOF')->label('Total'),
+                        ])->columns(4)->label(''),
+                ])->columnSpan('full'),
+        ])->columns(3);
     }
-    
+ 
     public static function updateGrandTotal(Get $get, Set $set): void
     {
-        $total = 0;
-        $items = $get('items');
-        if (is_array($items)) {
-            foreach ($items as $item) {
-                $total += ($item['quantite'] ?? 0) * ($item['prix_unitaire'] ?? 0);
-            }
-        }
+        $total = collect($get('items'))->sum(fn (array $item) => ($item['quantite'] ?? 0) * ($item['prix_unitaire'] ?? 0));
         $set('montant_total', $total);
     }
     
     public static function getRelations(): array
     {
-        return [];
+        return [
+            ReglementsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
@@ -173,3 +165,4 @@ class OrderResource extends Resource
         ];
     }
 }
+

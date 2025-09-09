@@ -2,12 +2,13 @@
 
 namespace App\Filament\Resources\VenteDirecteResource\Pages;
 
+use App\Enums\OrderStatusEnum;
+use App\Enums\PaymentStatusEnum;
+use App\Filament\Resources\OrderResource;
 use App\Filament\Resources\VenteDirecteResource;
-use App\Models\Client;
-use App\Models\PointDeVente;
-use App\Models\Reglement;
-use App\Observers\ReglementObserver;
-use App\Services\StockManager;
+use App\Models\Order;
+use App\Models\VenteDirecte;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -19,61 +20,60 @@ class CreateVenteDirecte extends CreateRecord
     protected function handleRecordCreation(array $data): Model
     {
         return DB::transaction(function () use ($data) {
-            
-            // --- LOGIQUE AMÉLIORÉE POUR LE CLIENT ---
-            $clientId = $data['client_id'];
-
-            // Si aucun client n'est sélectionné, on utilise notre client par défaut.
-            if (empty($clientId)) {
-                $clientComptoir = Client::where('email', 'comptoir@somacif.net')->firstOrFail();
-                $clientId = $clientComptoir->id;
-            }
-            // -----------------------------------------
-
-            // On récupère le point de vente qui représente notre entrepôt.
-            $pointDeVenteEntrepot = PointDeVente::where('nom', 'Entrepôt Principal (Ventes Directes)')->firstOrFail();
-
-            // 1. Préparer les données pour la Commande (Order)
-            $orderData = [
-                'client_id' => $clientId, // Utilise le bon ID client
-                'point_de_vente_id' => $pointDeVenteEntrepot->id, // Toujours notre entrepôt
-                'numero_commande' => 'VD-' . random_int(1000, 9999),
-                'statut' => 'validee',
+            // 1. Créer la Commande avec le statut 'VALIDEE'
+            // L'OrderObserver va maintenant se déclencher et gérer le transfert de stock
+            // de l'entrepôt vers le point de vente.
+            $order = Order::create([
+                'client_id' => $data['client_id'],
+                'point_de_vente_id' => $data['point_de_vente_id'],
+                'numero_commande' => $data['numero_facture'],
+                'statut' => OrderStatusEnum::VALIDEE, // CORRECTION : Le statut correct
                 'montant_total' => $data['montant_total'],
                 'notes' => $data['notes'],
-                'statut_paiement' => 'non_payee',
-                'montant_paye' => 0,
                 'is_vente_directe' => true,
-            ];
-            
-            // 2. Créer la Commande (déclenche l'OrderObserver)
-            $order = static::getModel()::create($orderData);
+                'statut_paiement' => PaymentStatusEnum::COMPLETEMENT_REGLE,
+                'montant_paye' => $data['montant_total'],
+                'user_id' => auth()->id(),
+            ]);
+
+            // 2. Attacher les articles à la commande
             $order->items()->createMany($data['items']);
 
-            // 3. Préparer les données pour le Règlement
-            $reglementData = [
-                'client_id' => $clientId, // Utilise le bon ID client
+            // 3. Créer le Règlement associé
+            // Le ReglementObserver va se déclencher et déstocker le point de vente.
+            $reglement = $order->reglements()->create([
+                'client_id' => $data['client_id'],
                 'date_reglement' => $data['date_vente'],
                 'montant_verse' => $data['montant_total'],
                 'montant_calcule' => $data['montant_total'],
                 'methode_paiement' => $data['methode_paiement'],
                 'user_id' => auth()->id(),
-            ];
+            ]);
 
-            // 4. Créer le Règlement et ses détails
-            $reglement = Reglement::create($reglementData);
-            $details = collect($data['items'])->map(fn ($item) => [
+            // 4. Mapper et attacher les détails au règlement
+            $detailsData = collect($data['items'])->map(fn ($item) => [
                 'unite_de_vente_id' => $item['unite_de_vente_id'],
                 'quantite_vendue' => $item['quantite'],
                 'prix_de_vente_unitaire' => $item['prix_unitaire'],
-            ]);
-            $reglement->details()->createMany($details->all());
-            $reglement->orders()->attach($order->id);
-
-            // 5. Déclencher la logique de règlement
-            (new ReglementObserver(new StockManager()))->process($reglement);
-
+            ])->all();
+            $reglement->details()->createMany($detailsData);
+            
+            // On retourne la nouvelle commande pour la redirection
             return $order;
         });
+    }
+    
+    protected function getCreatedNotification(): ?Notification
+    {
+        return Notification::make()
+            ->success()
+            ->title('Vente Directe Enregistrée')
+            ->body('La commande et le règlement unifiés ont été créés.');
+    }
+
+    protected function getRedirectUrl(): string
+    {
+        // On redirige l'utilisateur vers la NOUVELLE COMMANDE qu'il vient de créer
+        return OrderResource::getUrl('view', ['record' => $this->record]);
     }
 }

@@ -3,136 +3,70 @@
 namespace App\Observers;
 
 use App\Models\Inventory;
-use App\Models\LieuDeStockage;
-use App\Models\PointDeVente;
+use App\Models\Order;
 use App\Models\StockTransfert;
-use App\Models\UniteDeVente;
-use Exception;
 use Illuminate\Support\Facades\DB;
+use Exception;
 
 class StockTransfertObserver
 {
     /**
-     * Valide le transfert AVANT sa création.
+     * S'exécute APRÈS la création d'un transfert.
+     * C'est ici que toute la logique de réallocation de commande et de stock est gérée.
      */
-    public function creating(StockTransfert $stockTransfert): void
+    public function created(StockTransfert $transfert): void
     {
-        $sourceLieu = $this->getLieuDeStockage($stockTransfert->source_type, $stockTransfert->source_id);
+        DB::transaction(function () use ($transfert) {
+            $sourceOrder = $transfert->order;
+            $sourcePdv = $sourceOrder->pointDeVente;
+            $destinationPdv = $transfert->destinationPointDeVente;
 
-        if (!$sourceLieu) {
-            throw new Exception("Le lieu de stockage source est invalide.");
-        }
+            // 1. Créer la nouvelle commande "fille"
+            $newOrder = Order::create([
+                'client_id' => $destinationPdv->responsable_id,
+                'point_de_vente_id' => $destinationPdv->id,
+                'numero_commande' => strtoupper(uniqid('CMD-TRANS-')),
+                'statut' => 'validee',
+                'notes' => "Généré par transfert depuis la commande {$sourceOrder->numero_commande}.",
+            ]);
 
-        foreach ($stockTransfert->details as $itemData) {
-            $uniteDeVente = UniteDeVente::find($itemData['unite_de_vente_id']);
-            $quantiteDemandee = $itemData['quantite'];
+            // 2. Lier la nouvelle commande au transfert pour la traçabilité
+            $transfert->new_order_id = $newOrder->id;
+            $transfert->saveQuietly();
 
-            // On cherche le stock de l'article à l'endroit source.
-            $inventory = Inventory::where('lieu_de_stockage_id', $sourceLieu->id)
-                                ->where('unite_de_vente_id', $uniteDeVente->id)
-                                ->first();
-            
-            $stockDisponible = $inventory->quantite_stock ?? 0;
+            $newOrderTotal = 0;
 
-            // *** VALIDATION CRUCIALE ***
-            if ($stockDisponible < $quantiteDemandee) {
-                throw new Exception(
-                    "Stock insuffisant pour '{$uniteDeVente->nom_complet}' " .
-                    "dans le lieu source '{$sourceLieu->nom}'. " .
-                    "Stock: {$stockDisponible}, Demandé: {$quantiteDemandee}."
-                );
-            }
-        }
-    }
-
-    /**
-     * Exécute le transfert APRÈS sa validation et sa création.
-     */
-    public function created(StockTransfert $stockTransfert): void
-    {
-        DB::transaction(function () use ($stockTransfert) {
-            $sourceLieu = $this->getLieuDeStockage($stockTransfert->source_type, $stockTransfert->source_id);
-            $destinationLieu = $this->getLieuDeStockage($stockTransfert->destination_type, $stockTransfert->destination_id);
-
-            if (!$sourceLieu || !$destinationLieu) {
-                throw new Exception("Lieu source ou destination invalide lors de l'exécution du transfert.");
-            }
-
-            foreach ($stockTransfert->details as $item) {
-                // Décrémenter le stock de la source
-                $inventaireSource = Inventory::where('lieu_de_stockage_id', $sourceLieu->id)
-                    ->where('unite_de_vente_id', $item['unite_de_vente_id'])
-                    ->first();
-                // La validation dans `creating` garantit que l'inventaire source existe et est suffisant
-                $inventaireSource->decrement('quantite_stock', $item['quantite']);
-
-                // Incrémenter le stock de la destination
-                $inventaireDestination = Inventory::firstOrCreate(
-                    ['lieu_de_stockage_id' => $destinationLieu->id, 'unite_de_vente_id' => $item['unite_de_vente_id']],
-                    ['quantite_stock' => 0]
-                );
-                $inventaireDestination->increment('quantite_stock', $item['quantite']);
-            }
-        });
-    }
-
-    /**
-     * Gère l'annulation d'un transfert (suppression).
-     */
-    public function deleted(StockTransfert $stockTransfert): void
-    {
-        DB::transaction(function () use ($stockTransfert) {
-            $sourceLieu = $this->getLieuDeStockage($stockTransfert->source_type, $stockTransfert->source_id);
-            $destinationLieu = $this->getLieuDeStockage($stockTransfert->destination_type, $stockTransfert->destination_id);
-
-            if (!$sourceLieu || !$destinationLieu) {
-                // On ne bloque pas mais on logue une erreur si on ne peut pas annuler
-                \Log::error("Impossible d'annuler le transfert #{$stockTransfert->id}, lieux introuvables.");
-                return;
-            }
-
-            foreach ($stockTransfert->details as $item) {
-                // On fait l'opération inverse : on re-crédite la source
-                $inventaireSource = Inventory::firstOrCreate(
-                    ['lieu_de_stockage_id' => $sourceLieu->id, 'unite_de_vente_id' => $item['unite_de_vente_id']],
-                    ['quantite_stock' => 0]
-                );
-                $inventaireSource->increment('quantite_stock', $item['quantite']);
-
-                // Et on re-débite la destination
-                $inventaireDestination = Inventory::where('lieu_de_stockage_id', $destinationLieu->id)
-                    ->where('unite_de_vente_id', $item['unite_de_vente_id'])
-                    ->first();
-                if ($inventaireDestination) {
-                    $inventaireDestination->decrement('quantite_stock', $item['quantite']);
+            // 3. Traiter chaque article
+            foreach ($transfert->details as $detail) {
+                $sourceOrderItem = $sourceOrder->items()->where('unite_de_vente_id', $detail['unite_de_vente_id'])->first();
+                if ($sourceOrderItem && $sourceOrderItem->quantite >= $detail['quantite']) {
+                    $sourceOrderItem->decrement('quantite', $detail['quantite']);
+                } else {
+                    throw new Exception("Quantité insuffisante dans la commande d'origine.");
                 }
+
+                $newOrderItem = $newOrder->items()->create([
+                    'unite_de_vente_id' => $detail['unite_de_vente_id'],
+                    'quantite' => $detail['quantite'],
+                    'prix_unitaire' => $sourceOrderItem->prix_unitaire,
+                ]);
+                $newOrderTotal += $newOrderItem->quantite * $newOrderItem->prix_unitaire;
+
+                Inventory::where('lieu_de_stockage_id', $sourcePdv->lieuDeStockage->id)
+                    ->where('unite_de_vente_id', $detail['unite_de_vente_id'])
+                    ->decrement('quantite_stock', $detail['quantite']);
+
+                Inventory::firstOrCreate(
+                    ['lieu_de_stockage_id' => $destinationPdv->lieuDeStockage->id, 'unite_de_vente_id' => $detail['unite_de_vente_id']],
+                    ['quantite_stock' => 0]
+                )->increment('quantite_stock', $detail['quantite']);
             }
-        });
-    }
 
-    /**
-     * Trouve un lieu de stockage, qu'il soit l'entrepôt ou un point de vente.
-     */
-    private function getLieuDeStockage(string $type, ?int $id): ?LieuDeStockage
-    {
-        if ($type === 'entrepot') {
-            return LieuDeStockage::find($this->getEntrepôtPrincipalId());
-        }
-
-        if ($type === 'point_de_vente' && $id) {
-            return PointDeVente::find($id)?->lieuDeStockage;
-        }
-
-        return null;
-    }
-
-    /**
-     * Récupère l'ID de l'Entrepôt Principal.
-     */
-    private function getEntrepôtPrincipalId(): ?int
-    {
-        return cache()->rememberForever('entrepot_principal_id', function () {
-            return LieuDeStockage::where('type', 'entrepot')->value('id');
+            // 4. Recalculer les totaux des deux commandes
+            // CORRECTION CRUCIALE : On force la mise à jour du montant total de la commande source.
+            $sourceOrder->recalculateTotal();
+            $newOrder->update(['montant_total' => $newOrderTotal]);
         });
     }
 }
+

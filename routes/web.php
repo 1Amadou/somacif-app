@@ -26,6 +26,22 @@ Route::get('/admin/orders/{order}/invoice', [InvoiceController::class, 'download
     ->middleware('auth') // Seuls les admins connectés peuvent y accéder
     ->name('invoice.order');
 
+    Route::get('/invoices/order/{order}', [InvoiceController::class, 'generateOrderInvoice'])
+    ->name('invoices.order')
+    ->middleware('auth'); // On protège la route
+
+Route::get('/invoices/delivery-note/{order}', [InvoiceController::class, 'generateDeliveryNote'])
+    ->name('invoices.delivery-note')
+    ->middleware('auth'); // On protège la route
+
+Route::get('/invoices/reglement-receipt/{reglement}', [InvoiceController::class, 'generateReglementReceipt'])
+    ->name('invoices.reglement-receipt')
+    ->middleware('auth');
+    
+Route::get('/reports/arrivage/{arrivage}', [InvoiceController::class, 'generateArrivageReport'])
+    ->name('reports.arrivage')
+    ->middleware('auth');
+
 
 // --- AUTHENTIFICATION & DÉCONNEXION ---
 Route::get('/connexion', MagicLogin::class)->middleware('guest:client,livreur')->name('login');

@@ -5,50 +5,36 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class StockTransfert extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'source_type',
-        'source_id',
-        'destination_type',
-        'destination_id',
-        'notes',
+        'order_id',
+        'new_order_id',
+        'source_point_de_vente_id',
+        'destination_point_de_vente_id',
         'user_id',
+        'notes',
+        'details',
     ];
 
     /**
-     * *** CORRECTION : Ajout de la relation 'details' ***
-     * Un transfert de stock est composé de plusieurs lignes de produits (détails).
-     * C'est cette relation qui manquait.
+     * Convertit automatiquement la colonne 'details' entre tableau PHP et JSON.
+     * C'est essentiel pour la correction.
      */
-    public function details(): HasMany
+    protected function casts(): array
     {
-        return $this->hasMany(StockTransfertDetail::class);
+        return [
+            'details' => 'array',
+        ];
     }
 
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
-
-    // Accesseurs pour obtenir les noms de la source et de la destination dynamiquement
-    public function getSourceAttribute(): Model|null
-    {
-        if ($this->source_type === 'entrepot') {
-            return LieuDeStockage::find(cache()->get('entrepot_principal_id'));
-        }
-        return PointDeVente::find($this->source_id);
-    }
-
-    public function getDestinationAttribute(): Model|null
-    {
-        if ($this->destination_type === 'entrepot') {
-            return LieuDeStockage::find(cache()->get('entrepot_principal_id'));
-        }
-        return PointDeVente::find($this->destination_id);
-    }
+    // --- RELATIONS ---
+    public function user(): BelongsTo { return $this->belongsTo(User::class); }
+    public function order(): BelongsTo { return $this->belongsTo(Order::class, 'order_id'); }
+    public function newOrder(): BelongsTo { return $this->belongsTo(Order::class, 'new_order_id'); }
+    public function sourcePointDeVente(): BelongsTo { return $this->belongsTo(PointDeVente::class, 'source_point_de_vente_id'); }
+    public function destinationPointDeVente(): BelongsTo { return $this->belongsTo(PointDeVente::class, 'destination_point_de_vente_id'); }
 }

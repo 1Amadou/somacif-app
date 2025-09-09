@@ -3,50 +3,38 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Resources\ArrivageResource;
-use App\Models\Inventory; // *** MODIFICATION 1: On utilise le modèle Inventory ***
+use App\Filament\Widgets\StockDetailWidget;
+use App\Models\Inventory;
 use App\Models\LieuDeStockage;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
-use Illuminate\Database\Eloquent\Collection;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
+use Filament\Tables\Contracts\HasTable;
+use Filament\Forms\Contracts\HasForms;
+use Filament\Tables\Concerns\InteractsWithTable;
+use Filament\Forms\Concerns\InteractsWithForms;
 
-class StockEntrepôtPrincipal extends Page
+class StockEntrepôtPrincipal extends Page implements HasForms, HasTable
 {
+    use InteractsWithForms;
+    use InteractsWithTable;
+
     protected static ?string $navigationIcon = 'heroicon-o-home-modern';
     protected static ?string $navigationLabel = 'Stock Entrepôt Principal';
     protected static ?string $navigationGroup = 'Gestion de Stock';
     protected static ?int $navigationSort = 2;
-
     protected static string $view = 'filament.pages.stock-entrepôt-principal';
+    protected ?string $heading = 'État du Stock de l\'Entrepôt Principal';
 
-    public string $titre = 'Stock de l\'Entrepôt Principal';
-    
-    // La variable contiendra maintenant des lignes d'inventaire
-    public Collection $inventaire; 
-
-    public function mount(): void
+    // ✅ Un seul widget ici, rendu automatiquement dans la vue
+    protected function getHeaderWidgets(): array
     {
-        // *** MODIFICATION 2: Logique entièrement réécrite ***
-        // On cible directement l'inventaire de l'entrepôt principal.
-        
-        // 1. Trouver l'ID de l'entrepôt principal (via le cache pour la performance)
-        $entrepotId = cache()->rememberForever('entrepot_principal_id', function () {
-            return LieuDeStockage::where('type', 'entrepot')->value('id');
-        });
-
-        if ($entrepotId) {
-            // 2. Récupérer toutes les lignes d'inventaire DE CET ENTREPÔT,
-            //    en chargeant les informations des unités de vente associées.
-            $this->inventaire = Inventory::query()
-                ->where('lieu_de_stockage_id', $entrepotId)
-                ->with('uniteDeVente.product') // On charge les relations pour l'affichage
-                ->get()
-                ->sortBy('uniteDeVente.nom_complet'); // On trie par nom complet
-        } else {
-            // Si l'entrepôt n'est pas trouvé, on initialise une collection vide.
-            $this->inventaire = collect();
-        }
+        return [
+            StockDetailWidget::class,
+        ];
     }
-    
+
     protected function getHeaderActions(): array
     {
         return [
@@ -55,5 +43,54 @@ class StockEntrepôtPrincipal extends Page
                 ->url(ArrivageResource::getUrl('create'))
                 ->icon('heroicon-o-plus-circle'),
         ];
+    }
+
+    public function table(Table $table): Table
+    {
+        return $table
+            ->query(function () {
+                $entrepotId = cache()->rememberForever('entrepot_principal_id', function () {
+                    return LieuDeStockage::where('type', 'entrepot')->value('id');
+                });
+
+                return Inventory::query()
+                    ->where('lieu_de_stockage_id', $entrepotId)
+                    ->with(['uniteDeVente.product']);
+            })
+            ->columns([
+                TextColumn::make('uniteDeVente.nom_complet')
+                    ->label('Produit (Unité de Vente)')
+                    ->searchable()
+                    ->sortable(),
+
+                TextColumn::make('quantite_stock')
+                    ->label('Quantité en Stock')
+                    ->numeric()
+                    ->sortable()
+                    ->badge(),
+
+                TextColumn::make('valeur_stock')
+                    ->label('Valeur du Stock (Coût Achat)')
+                    ->money('XOF')
+                    ->state(function (Inventory $record): float {
+                        $arrivageItem = $record->uniteDeVente->arrivageItems()
+                            ->join('arrivages', 'arrivage_items.arrivage_id', '=', 'arrivages.id')
+                            ->orderByDesc('arrivages.date_arrivage')
+                            ->select('arrivage_items.*')
+                            ->first();
+
+                        return ($arrivageItem->prix_achat_unitaire ?? 0) * $record->quantite_stock;
+                    })
+                    ->sortable(),
+
+                TextColumn::make('revenu_potentiel')
+                    ->label('Revenu Potentiel (Prix Particulier)')
+                    ->money('XOF')
+                    ->state(function (Inventory $record): float {
+                        return ($record->uniteDeVente->prix_particulier ?? 0) * $record->quantite_stock;
+                    })
+                    ->sortable(),
+            ])
+            ->defaultSort('uniteDeVente.nom_complet');
     }
 }

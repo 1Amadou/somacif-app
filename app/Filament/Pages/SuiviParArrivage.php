@@ -20,7 +20,7 @@ class SuiviParArrivage extends Page implements HasForms
     protected static ?string $navigationIcon = 'heroicon-o-document-chart-bar';
     protected static ?string $navigationGroup = 'Gestion de Stock';
     protected static ?string $navigationLabel = 'Suivi par Arrivage';
-    protected static ?int $navigationSort = 4; // Mis à jour pour être après les transferts
+    protected static ?int $navigationSort = 4;
     protected static string $view = 'filament.pages.suivi-par-arrivage';
 
     public ?int $selectedArrivageId = null;
@@ -51,9 +51,9 @@ class SuiviParArrivage extends Page implements HasForms
 
         $reportData = [];
         $entrepotId = LieuDeStockage::where('type', 'entrepot')->value('id');
-        $pointDeVenteIds = LieuDeStockage::where('type', 'point_de_vente')->pluck('id');
+        $pointsDeVente = LieuDeStockage::where('type', 'point_de_vente')->get();
+        $pointDeVenteIds = $pointsDeVente->pluck('id');
 
-        // Calculs pour les totaux
         $totalCoutAchat = 0;
         $totalQuantiteRecue = 0;
         $totalStockRestantGlobal = 0;
@@ -67,15 +67,29 @@ class SuiviParArrivage extends Page implements HasForms
             $quantiteRecue = $item->quantite;
             $coutAchatUnitaire = $item->prix_achat_unitaire;
 
-            // 1. Calcul des stocks actuels
+            // 1. Calcul des stocks
             $stockPrincipal = Inventory::where('unite_de_vente_id', $unite->id)->where('lieu_de_stockage_id', $entrepotId)->value('quantite_stock') ?? 0;
             $stockClients = Inventory::where('unite_de_vente_id', $unite->id)->whereIn('lieu_de_stockage_id', $pointDeVenteIds)->sum('quantite_stock');
             $stockTotalActuel = $stockPrincipal + $stockClients;
             
-            // 2. Calcul des ventes et revenus pour cet article
-            $ventes = DetailReglement::where('unite_de_vente_id', $unite->id)->get();
-            $quantiteVendue = $ventes->sum('quantite_vendue');
-            $revenuGenere = $ventes->sum(fn($vente) => $vente->quantite_vendue * $vente->prix_de_vente_unitaire);
+            // NOUVEAU : Répartition détaillée du stock chez les clients
+            $repartitionStock = [];
+            foreach ($pointsDeVente as $pdv) {
+                $stockPdv = Inventory::where('unite_de_vente_id', $unite->id)->where('lieu_de_stockage_id', $pdv->id)->value('quantite_stock') ?? 0;
+                if ($stockPdv > 0) {
+                    $repartitionStock[] = ['nom_pdv' => $pdv->nom, 'quantite' => $stockPdv];
+                }
+            }
+
+            // 2. Calcul des ventes et revenus
+            $ventesQuery = DetailReglement::where('unite_de_vente_id', $unite->id);
+            $quantiteVendue = $ventesQuery->sum('quantite_vendue');
+            $revenuGenere = $ventesQuery->get()->sum(fn($vente) => $vente->quantite_vendue * $vente->prix_de_vente_unitaire);
+
+            // NOUVEAU : Détail des ventes par prix
+            $ventesDetaillees = $ventesQuery->selectRaw('prix_de_vente_unitaire, SUM(quantite_vendue) as quantite_totale')
+                                ->groupBy('prix_de_vente_unitaire')
+                                ->get();
 
             $reportData[] = [
                 'nom_complet' => $unite->nom_complet,
@@ -87,6 +101,8 @@ class SuiviParArrivage extends Page implements HasForms
                 'quantite_vendue' => $quantiteVendue,
                 'revenu_genere' => $revenuGenere,
                 'marge_sur_ventes' => $revenuGenere - ($quantiteVendue * $coutAchatUnitaire),
+                'ventes_detaillees' => $ventesDetaillees, // Données enrichies
+                'repartition_stock' => $repartitionStock, // Données enrichies
             ];
 
             // Mise à jour des totaux globaux
@@ -120,11 +136,8 @@ class SuiviParArrivage extends Page implements HasForms
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('gray')
                 ->visible(fn () => $this->selectedArrivageId !== null)
-                // L'action réelle nécessitera une librairie comme barryvdh/laravel-dompdf
-                ->action(function () {
-                    // Logique d'exportation à implémenter ici
-                    $this->dispatch('print-report');
-                }),
+                ->url(fn () => route('reports.arrivage', ['arrivage' => $this->selectedArrivageId]))
+                ->openUrlInNewTab(),
         ];
     }
 }
