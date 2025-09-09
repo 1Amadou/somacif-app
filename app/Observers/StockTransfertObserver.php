@@ -32,19 +32,22 @@ class StockTransfertObserver
 
             // 2. Lier la nouvelle commande au transfert pour la traçabilité
             $transfert->new_order_id = $newOrder->id;
-            $transfert->saveQuietly();
+            $transfert->saveQuietly(); // saveQuietly pour ne pas redéclencher d'observer
 
             $newOrderTotal = 0;
 
             // 3. Traiter chaque article
             foreach ($transfert->details as $detail) {
+                // On s'assure de prendre l'item de la commande source
                 $sourceOrderItem = $sourceOrder->items()->where('unite_de_vente_id', $detail['unite_de_vente_id'])->first();
                 if ($sourceOrderItem && $sourceOrderItem->quantite >= $detail['quantite']) {
+                    // On réduit la quantité sur la commande source
                     $sourceOrderItem->decrement('quantite', $detail['quantite']);
                 } else {
-                    throw new Exception("Quantité insuffisante dans la commande d'origine.");
+                    throw new Exception("Quantité insuffisante dans la commande d'origine pour le transfert.");
                 }
 
+                // On crée l'item sur la nouvelle commande
                 $newOrderItem = $newOrder->items()->create([
                     'unite_de_vente_id' => $detail['unite_de_vente_id'],
                     'quantite' => $detail['quantite'],
@@ -52,6 +55,7 @@ class StockTransfertObserver
                 ]);
                 $newOrderTotal += $newOrderItem->quantite * $newOrderItem->prix_unitaire;
 
+                // Mouvement de stock : du PDV source vers le PDV destination
                 Inventory::where('lieu_de_stockage_id', $sourcePdv->lieuDeStockage->id)
                     ->where('unite_de_vente_id', $detail['unite_de_vente_id'])
                     ->decrement('quantite_stock', $detail['quantite']);
@@ -63,10 +67,8 @@ class StockTransfertObserver
             }
 
             // 4. Recalculer les totaux des deux commandes
-            // CORRECTION CRUCIALE : On force la mise à jour du montant total de la commande source.
             $sourceOrder->recalculateTotal();
             $newOrder->update(['montant_total' => $newOrderTotal]);
         });
     }
 }
-

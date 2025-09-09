@@ -18,8 +18,9 @@ use Illuminate\Support\Facades\Notification;
 class OrderObserver
 {
     /**
-     * *** CORRECTION MAJEURE : Validation AVANT la création ***
-     * Gère la validation du stock si une commande est créée directement avec le statut "Validée".
+     * Gère la validation du stock AVANT la création d'une commande.
+     * Si une commande est créée directement avec le statut "Validée", cette méthode
+     * s'assure que le stock est disponible dans l'entrepôt principal.
      */
     public function creating(Order $order): void
     {
@@ -32,10 +33,17 @@ class OrderObserver
 
     /**
      * Gère le transfert de stock APRÈS la création réussie.
+     * C'est la correction clé pour le module de Vente Directe.
      */
     public function created(Order $order): void
     {
-        
+        // Si la commande est créée directement avec le statut "Validée",
+        // on déclenche immédiatement le transfert de stock.
+        if ($order->statut === OrderStatusEnum::VALIDEE) {
+            DB::transaction(function () use ($order) {
+                $this->transfertStockFromEntrepôtToPointDeVente($order);
+            });
+        }
     }
 
     /**
@@ -53,7 +61,7 @@ class OrderObserver
             }
 
             DB::transaction(function () use ($order, $oldStatus, $newStatus) {
-                // Si on valide une commande qui était en attente
+                // Si on valide une commande qui était en attente (flux standard)
                 if ($newStatus === OrderStatusEnum::VALIDEE && $oldStatus === OrderStatusEnum::EN_ATTENTE) {
                     $this->validateStockForTransfer($order); // D'abord valider
                     $this->transfertStockFromEntrepôtToPointDeVente($order); // Ensuite transférer
@@ -71,7 +79,8 @@ class OrderObserver
     }
 
     /**
-     * Valide que le stock est suffisant pour le transfert. Lance une exception si non.
+     * Valide que le stock est suffisant dans l'entrepôt principal pour le transfert.
+     * Lance une exception si le stock est insuffisant.
      */
     protected function validateStockForTransfer(Order $order): void
     {
@@ -91,9 +100,9 @@ class OrderObserver
         }
     }
     
-    // Le reste des fonctions (transfert, retour, notifications) reste identique
-    // car leur logique interne est déjà correcte.
-
+    /**
+     * Exécute le mouvement de stock : décrémente l'entrepôt et incrémente le point de vente.
+     */
     protected function transfertStockFromEntrepôtToPointDeVente(Order $order): void
     {
         $entrepotId = $this->getEntrepôtPrincipalId();
@@ -104,20 +113,22 @@ class OrderObserver
         }
 
         foreach ($order->items as $item) {
-            $inventaireEntrepôt = Inventory::where('lieu_de_stockage_id', $entrepotId)
-                ->where('unite_de_vente_id', $item->unite_de_vente_id)->first();
-            if ($inventaireEntrepôt) {
-                 $inventaireEntrepôt->decrement('quantite_stock', $item->quantite);
-            }
+            // Décrémenter le stock de l'entrepôt
+            Inventory::where('lieu_de_stockage_id', $entrepotId)
+                ->where('unite_de_vente_id', $item->unite_de_vente_id)
+                ->decrement('quantite_stock', $item->quantite);
 
-            $inventairePointDeVente = Inventory::firstOrCreate(
+            // Incrémenter le stock du point de vente (le crée s'il n'existe pas)
+            Inventory::firstOrCreate(
                 ['lieu_de_stockage_id' => $pointDeVenteLieuId, 'unite_de_vente_id' => $item->unite_de_vente_id],
                 ['quantite_stock' => 0]
-            );
-            $inventairePointDeVente->increment('quantite_stock', $item->quantite);
+            )->increment('quantite_stock', $item->quantite);
         }
     }
 
+    /**
+     * Inverse le mouvement de stock en cas d'annulation de commande.
+     */
     protected function returnStockFromPointDeVenteToEntrepôt(Order $order): void
     {
         $entrepotId = $this->getEntrepôtPrincipalId();
@@ -128,6 +139,7 @@ class OrderObserver
         }
 
         foreach ($order->items as $item) {
+            // Décrémenter le stock du point de vente
             $inventairePointDeVente = Inventory::where('lieu_de_stockage_id', $pointDeVenteLieuId)
                 ->where('unite_de_vente_id', $item->unite_de_vente_id)->first();
             
@@ -135,6 +147,7 @@ class OrderObserver
                 $inventairePointDeVente->decrement('quantite_stock', $item->quantite);
             }
 
+            // Ré-incrémenter le stock de l'entrepôt
             $inventaireEntrepôt = Inventory::where('lieu_de_stockage_id', $entrepotId)
                 ->where('unite_de_vente_id', $item->unite_de_vente_id)->first();
 
@@ -144,6 +157,9 @@ class OrderObserver
         }
     }
 
+    /**
+     * Gère l'envoi des notifications en fonction du nouveau statut de la commande.
+     */
     protected function handleNotifications(Order $order, $newStatus): void
     {
         if ($newStatus === OrderStatusEnum::EN_PREPARATION && $order->livreur) {
@@ -160,6 +176,9 @@ class OrderObserver
         }
     }
 
+    /**
+     * Récupère l'ID de l'entrepôt principal depuis le cache pour optimiser les performances.
+     */
     private function getEntrepôtPrincipalId(): ?int
     {
         return cache()->rememberForever('entrepot_principal_id', function () {

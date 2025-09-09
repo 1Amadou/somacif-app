@@ -39,6 +39,10 @@ class Order extends Model
             if (is_null($order->montant_total)) {
                 $order->montant_total = 0;
             }
+             // Assurez-vous que le montant payé est initialisé à 0
+            if (is_null($order->montant_paye)) {
+                $order->montant_paye = 0;
+            }
         });
     }
 
@@ -53,35 +57,50 @@ class Order extends Model
     // --- LOGIQUE MÉTIER ---
     public function updatePaymentStatus(): void
     {
-        $quantiteCommandee = $this->quantite_actuelle;
-        $quantiteReglee = $this->quantite_reglee;
+        // On force le rechargement du total versé pour avoir la donnée la plus fraîche
         $totalVerse = $this->reglements()->sum('montant_verse');
-        
         $this->montant_paye = $totalVerse;
 
-        if ($quantiteCommandee > 0 && $quantiteReglee >= $quantiteCommandee) {
+        // Logique de statut infaillible
+        if ($this->montant_total > 0 && $totalVerse >= $this->montant_total) {
             $this->statut_paiement = PaymentStatusEnum::COMPLETEMENT_REGLE;
-        } elseif ($quantiteReglee > 0) {
+        } elseif ($totalVerse > 0) {
             $this->statut_paiement = PaymentStatusEnum::PARTIELLEMENT_REGLE;
         } else {
             $this->statut_paiement = PaymentStatusEnum::NON_PAYEE;
         }
+        
         $this->saveQuietly();
     }
     
     public function recalculateTotal(): void
     {
         $this->loadMissing('items');
-        $total = $this->items->sum(function ($item) {
-            return $item->quantite * $item->prix_unitaire;
-        });
+        $total = $this->items->sum(fn ($item) => $item->quantite * $item->prix_unitaire);
         $this->update(['montant_total' => $total]);
     }
 
-    // --- ACCESSEURS (GETTERS) POUR LA VUE ---
-    public function getQuantiteInitialeAttribute(): int
+    // --- ACCESSEURS (GETTERS) POUR L'AFFICHAGE ---
+    public function getQuantiteActuelleAttribute(): int
     {
         return $this->items()->sum('quantite');
+    }
+
+    public function getQuantiteTransfereeAttribute(): int
+    {
+        // On charge d'abord la collection avec ->get()
+        $transferts = $this->transfertsOrigine()->get();
+        
+        // Ensuite, on travaille sur la collection PHP
+        return $transferts->sum(function ($transfert) {
+            // Le casting en 'array' est une sécurité supplémentaire
+            return collect((array) $transfert->details)->sum('quantite');
+        });
+    }
+
+    public function getQuantiteInitialeAttribute(): int
+    {
+        return $this->quantite_actuelle + $this->quantite_transferee;
     }
 
     public function getQuantiteRegleeAttribute(): int
@@ -89,23 +108,10 @@ class Order extends Model
         return $this->reglements()->with('details')->get()->sum(fn ($reglement) => $reglement->details->sum('quantite_vendue'));
     }
     
-    /**
-     * CORRECTION DE L'ERREUR :
-     * On ne traite plus 'details' comme une relation, mais comme une propriété (tableau).
-     */
-    public function getQuantiteTransfereeAttribute(): int
+    public function getQuantiteRestanteAPayerAttribute(): int
     {
-        $this->loadMissing('transfertsOrigine');
-        
-        return $this->transfertsOrigine->sum(function ($transfert) {
-            // On somme directement la clé 'quantite' dans le tableau 'details'
-            return collect($transfert->details)->sum('quantite');
-        });
-    }
-
-    public function getQuantiteActuelleAttribute(): int
-    {
-        return $this->quantite_initiale - $this->quantite_transferee;
+        $restant = $this->quantite_actuelle - $this->quantite_reglee;
+        return max(0, $restant);
     }
     
     public function getTotalVerseAttribute(): float
@@ -113,22 +119,36 @@ class Order extends Model
         return $this->montant_paye ?? 0;
     }
     
+    public function getSoldeRestantAPayerAttribute(): float
+    {
+        return $this->montant_total - $this->total_verse;
+    }
+    
     public function getRemiseTotaleAttribute(): float
     {
         $montantAttendu = 0;
+        // On charge les relations nécessaires pour le calcul
         $reglements = $this->reglements()->with('details')->get();
-        $orderItems = $this->items;
+        $orderItems = $this->items()->get()->keyBy('unite_de_vente_id');
 
         foreach ($reglements as $reglement) {
             foreach ($reglement->details as $detail) {
-                $orderItem = $orderItems->firstWhere('unite_de_vente_id', $detail->unite_de_vente_id);
+                // On trouve l'article de commande correspondant
+                $orderItem = $orderItems->get($detail->unite_de_vente_id);
                 if ($orderItem) {
+                    // Le "montant attendu" est basé sur le prix initial de la commande
                     $montantAttendu += $detail->quantite_vendue * $orderItem->prix_unitaire;
                 }
             }
         }
         
         if ($montantAttendu === 0.0) return 0.0;
-        return $this->total_verse - $montantAttendu;
+
+        // Le total versé est le montant réel payé
+        $totalVerse = $this->total_verse;
+
+        // La "marge" est la différence.
+        // Négatif = vendu moins cher (remise), Positif = vendu plus cher (surprix)
+        return $totalVerse - $montantAttendu;
     }
 }

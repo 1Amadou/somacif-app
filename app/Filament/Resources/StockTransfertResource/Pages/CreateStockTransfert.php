@@ -4,14 +4,11 @@ namespace App\Filament\Resources\StockTransfertResource\Pages;
 
 use App\Filament\Resources\StockTransfertResource;
 use App\Models\Client;
-use App\Models\Inventory;
 use App\Models\Order;
 use App\Models\PointDeVente;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
-use Illuminate\Support\Facades\DB;
-use Exception;
 
 class CreateStockTransfert extends CreateRecord
 {
@@ -19,6 +16,7 @@ class CreateStockTransfert extends CreateRecord
 
     /**
      * Personnalise le bouton de création principal pour inclure une modale de confirmation.
+     * C'est une excellente pratique pour une action irréversible.
      */
     protected function getCreateFormAction(): Action
     {
@@ -44,68 +42,23 @@ class CreateStockTransfert extends CreateRecord
             ->modalSubmitActionLabel('Oui, confirmer la réallocation');
     }
 
+    /**
+     * Prépare les données juste avant la création.
+     */
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $order = Order::find($data['order_id']);
         
         $data['user_id'] = auth()->id();
         $data['source_point_de_vente_id'] = $order->point_de_vente_id;
-        $data['destination_point_de_vente_id'] = $data['destination_point_de_vente_id'];
+        // La destination_point_de_vente_id est déjà dans $data
 
         return $data;
     }
 
-    protected function afterCreate(): void
-    {
-        $transfert = $this->getRecord();
-        
-        DB::transaction(function () use ($transfert) {
-            $sourceOrder = $transfert->order;
-            $sourcePdv = $sourceOrder->pointDeVente;
-            $destinationPdv = $transfert->destinationPointDeVente;
-
-            $newOrder = Order::create([
-                'client_id' => $destinationPdv->responsable_id,
-                'point_de_vente_id' => $destinationPdv->id,
-                'numero_commande' => strtoupper(uniqid('CMD-TRANS-')),
-                'statut' => 'validee',
-                'notes' => "Généré par transfert depuis la commande {$sourceOrder->numero_commande}.",
-            ]);
-
-            $transfert->new_order_id = $newOrder->id;
-            $transfert->save();
-
-            $newOrderTotal = 0;
-
-            foreach ($transfert->details as $detail) {
-                $sourceOrderItem = $sourceOrder->items()->where('unite_de_vente_id', $detail['unite_de_vente_id'])->first();
-                if ($sourceOrderItem && $sourceOrderItem->quantite >= $detail['quantite']) {
-                    $sourceOrderItem->decrement('quantite', $detail['quantite']);
-                } else {
-                    throw new Exception("Quantité insuffisante dans la commande d'origine.");
-                }
-
-                $newOrderItem = $newOrder->items()->create([
-                    'unite_de_vente_id' => $detail['unite_de_vente_id'],
-                    'quantite' => $detail['quantite'],
-                    'prix_unitaire' => $sourceOrderItem->prix_unitaire,
-                ]);
-                $newOrderTotal += $newOrderItem->quantite * $newOrderItem->prix_unitaire;
-
-                Inventory::where('lieu_de_stockage_id', $sourcePdv->lieuDeStockage->id)
-                    ->where('unite_de_vente_id', $detail['unite_de_vente_id'])
-                    ->decrement('quantite_stock', $detail['quantite']);
-
-                Inventory::firstOrCreate(
-                    ['lieu_de_stockage_id' => $destinationPdv->lieuDeStockage->id, 'unite_de_vente_id' => $detail['unite_de_vente_id']],
-                    ['quantite_stock' => 0]
-                )->increment('quantite_stock', $detail['quantite']);
-            }
-
-            $sourceOrder->recalculateTotal();
-            $newOrder->update(['montant_total' => $newOrderTotal]);
-        });
-    }
+    // --- CORRECTION ---
+    // La méthode afterCreate() a été entièrement supprimée.
+    // L'observateur s'en charge maintenant.
 
     protected function getCreatedNotification(): ?Notification
     {
